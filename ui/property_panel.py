@@ -61,7 +61,7 @@ class PropertyPanel(ttk.Frame):
     
     def _show_empty_state(self):
         """Show empty state when no layer is selected"""
-        label = ttk.Label(self.scrollable_frame, text="No layer selected", font=("Arial", 12))
+        label = ttk.Label(self.scrollable_frame, text="No layer selected", font=("Segoe UI", 12))
         label.pack(pady=20)
     
     def _show_layer_properties(self, layer: BaseLayer):
@@ -237,7 +237,7 @@ class PropertyPanel(ttk.Frame):
         frame = ttk.Frame(self.scrollable_frame)
         frame.pack(fill="x", padx=5, pady=(10, 5))
         
-        label = ttk.Label(frame, text=title, font=("Arial", 10, "bold"))
+        label = ttk.Label(frame, text=title, font=("Segoe UI", 10, "bold"))
         label.pack(anchor="w")
     
     def _add_label(self, name: str, value: str):

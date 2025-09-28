@@ -61,15 +61,15 @@ class PreviewCanvas(tk.Canvas):
         """Create drag & drop areas for adding elements"""
         # Text drop area
         self.create_rectangle(50, 50, 150, 100, fill="lightblue", outline="darkblue", width=2, tags="text_drop")
-        self.create_text(100, 75, text="CHỮ", fill="darkblue", font=("Arial", 12, "bold"), tags="text_drop")
+        self.create_text(100, 75, text="TEXT", fill="darkblue", font=("Arial", 12, "bold"), tags="text_drop")
         
         # Image drop area
         self.create_rectangle(200, 50, 300, 100, fill="lightgreen", outline="darkgreen", width=2, tags="image_drop")
-        self.create_text(250, 75, text="ẢNH", fill="darkgreen", font=("Arial", 12, "bold"), tags="image_drop")
+        self.create_text(250, 75, text="IMAGE", fill="darkgreen", font=("Arial", 12, "bold"), tags="image_drop")
         
         # Box drop area
         self.create_rectangle(350, 50, 450, 100, fill="lightcoral", outline="darkred", width=2, tags="box_drop")
-        self.create_text(400, 75, text="HỘP", fill="darkred", font=("Arial", 12, "bold"), tags="box_drop")
+        self.create_text(400, 75, text="BOX", fill="darkred", font=("Arial", 12, "bold"), tags="box_drop")
     
     def set_timeline_manager(self, timeline_manager: TimelineManager):
         """Set timeline manager"""
@@ -697,8 +697,8 @@ class PreviewCanvas(tk.Canvas):
         # Open file dialog to select image first
         from tkinter import filedialog
         image_paths = filedialog.askopenfilenames(
-            title="Chọn tệp ảnh",
-            filetypes=[("Tệp ảnh", "*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.webp"), ("Tất cả tệp", "*.*")]
+            title="Select Image Files",
+            filetypes=[("Image Files", "*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.webp"), ("All Files", "*.*")]
         )
         
         if image_paths:
@@ -712,7 +712,7 @@ class PreviewCanvas(tk.Canvas):
             # Update time slider in main window if accessible via callback
             self.refresh()
         else:
-            print("Không có ảnh nào được chọn")
+            print("No images selected")
     
     def _create_box_layer_at_position(self, x: int, y: int):
         """Create box layer at position"""
