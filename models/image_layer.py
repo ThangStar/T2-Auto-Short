@@ -161,6 +161,17 @@ class ImageLayer(BaseLayer):
             if self.flip_vertical:
                 img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
             
+            # Apply opacity if needed
+            if self.opacity < 1.0:
+                if img.mode != "RGBA":
+                    img = img.convert("RGBA")
+                alpha = int(max(0.0, min(1.0, self.opacity)) * 255)
+                r, g, b, *rest = img.split() if img.mode == "RGBA" else (*img.split(),)
+                if img.mode != "RGBA":
+                    img = img.convert("RGBA")
+                a = Image.new("L", img.size, color=alpha)
+                img.putalpha(a)
+            
             # Convert to PhotoImage and keep reference
             self.photo_image = ImageTk.PhotoImage(img)
             
@@ -186,6 +197,46 @@ class ImageLayer(BaseLayer):
             import traceback
             traceback.print_exc()
     
+    def render_preview_with_opacity(self, canvas: tk.Canvas, opacity: float) -> None:
+        """Render image ignoring visibility window with a specific opacity (0..1)."""
+        try:
+            # Load image if not already loaded
+            if not self.original_image and self.image_path and os.path.exists(self.image_path):
+                self.load_image(self.image_path)
+            if not self.original_image:
+                return
+            if not self.scaled_image:
+                self._update_scaled_image()
+            if not self.scaled_image:
+                return
+            img = self.scaled_image.copy()
+            if self.rotation != 0:
+                img = img.rotate(self.rotation, expand=True)
+            if self.flip_horizontal:
+                img = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+            if self.flip_vertical:
+                img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+            # Apply custom opacity
+            if img.mode != "RGBA":
+                img = img.convert("RGBA")
+            alpha = int(max(0.0, min(1.0, opacity)) * 255)
+            a = Image.new("L", img.size, color=alpha)
+            img.putalpha(a)
+            self.photo_image = ImageTk.PhotoImage(img)
+            if self.fit_mode in ["fit", "fill"]:
+                img_w, img_h = self.photo_image.width(), self.photo_image.height()
+                x = self.x + (self.width - img_w) // 2
+                y = self.y + (self.height - img_h) // 2
+                canvas.create_image(x, y, image=self.photo_image, anchor="nw")
+            elif self.fit_mode == "cover":
+                canvas.create_image(self.x, self.y, image=self.photo_image, anchor="nw")
+            else:
+                canvas.create_image(self.x, self.y, image=self.photo_image, anchor="nw")
+        except Exception as e:
+            print(f"Error rendering image with custom opacity: {e}")
+            import traceback
+            traceback.print_exc()
+
     def export_data(self) -> Dict[str, Any]:
         """Export image layer data for video rendering"""
         return {

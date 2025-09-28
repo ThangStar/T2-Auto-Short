@@ -68,37 +68,37 @@ class MainWindow:
         
         # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="New Project", command=self._new_project)
-        file_menu.add_command(label="Open Project", command=self._open_project)
-        file_menu.add_command(label="Save Project", command=self._save_project)
+        menubar.add_cascade(label="Tệp", menu=file_menu)
+        file_menu.add_command(label="Dự án mới", command=self._new_project)
+        file_menu.add_command(label="Mở dự án", command=self._open_project)
+        file_menu.add_command(label="Lưu dự án", command=self._save_project)
         file_menu.add_separator()
-        file_menu.add_command(label="Import Images", command=self._import_images)
-        file_menu.add_command(label="Import Video", command=self._import_video)
+        file_menu.add_command(label="Nhập ảnh", command=self._import_images)
+        file_menu.add_command(label="Nhập video", command=self._import_video)
         file_menu.add_separator()
-        file_menu.add_command(label="Export Video", command=self._export_video)
+        file_menu.add_command(label="Xuất video", command=self._export_video)
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.quit)
+        file_menu.add_command(label="Thoát", command=self.root.quit)
         
         # Edit menu
         edit_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Edit", menu=edit_menu)
-        edit_menu.add_command(label="Undo", command=self._undo)
-        edit_menu.add_command(label="Redo", command=self._redo)
+        menubar.add_cascade(label="Chỉnh sửa", menu=edit_menu)
+        edit_menu.add_command(label="Hoàn tác", command=self._undo)
+        edit_menu.add_command(label="Làm lại", command=self._redo)
         edit_menu.add_separator()
-        edit_menu.add_command(label="Delete Selected", command=self._delete_selected)
+        edit_menu.add_command(label="Xóa đã chọn", command=self._delete_selected)
         
         # View menu
         view_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="View", menu=view_menu)
-        view_menu.add_command(label="Zoom In", command=self._zoom_in)
-        view_menu.add_command(label="Zoom Out", command=self._zoom_out)
-        view_menu.add_command(label="Reset Zoom", command=self._reset_zoom)
+        menubar.add_cascade(label="Xem", menu=view_menu)
+        view_menu.add_command(label="Phóng to", command=self._zoom_in)
+        view_menu.add_command(label="Thu nhỏ", command=self._zoom_out)
+        view_menu.add_command(label="Đặt lại zoom", command=self._reset_zoom)
         
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Help", menu=help_menu)
-        help_menu.add_command(label="About", command=self._show_about)
+        menubar.add_cascade(label="Trợ giúp", menu=help_menu)
+        help_menu.add_command(label="Giới thiệu", command=self._show_about)
     
     def _create_main_layout(self):
         """Create main layout with paned windows"""
@@ -116,10 +116,25 @@ class MainWindow:
         
         self.left_panel = left_panel
         self.right_panel = right_panel
+        
+        # Top area in left panel for toolbar (must be packed before inner split)
+        self.toolbar_container = ttk.Frame(self.left_panel)
+        self.toolbar_container.pack(fill=tk.X, padx=5, pady=5)
+
+        # Create inner split on the left: preview (left) and timeline/layers (right)
+        self.left_inner = ttk.PanedWindow(self.left_panel, orient=tk.HORIZONTAL)
+        self.left_inner.pack(fill=tk.BOTH, expand=True)
+        
+        self.preview_side = ttk.Frame(self.left_inner)
+        self.timeline_side = ttk.Frame(self.left_inner, width=340)
+        
+        self.left_inner.add(self.preview_side, weight=3)
+        self.left_inner.add(self.timeline_side, weight=2)
     
     def _create_toolbar(self):
         """Create toolbar"""
-        toolbar = ttk.Frame(self.left_panel)
+        parent = getattr(self, "toolbar_container", self.left_panel)
+        toolbar = ttk.Frame(parent)
         toolbar.pack(fill=tk.X, padx=5, pady=5)
         
         # Playback controls
@@ -131,9 +146,10 @@ class MainWindow:
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
         # Layer controls
-        ttk.Button(toolbar, text="Add Text", command=self._add_text_layer).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Add Image", command=self._add_image_layer).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Add Box", command=self._add_box_layer).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Thêm chữ", command=self._add_text_layer).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Thêm ảnh", command=self._add_image_layer).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Thêm hộp", command=self._add_box_layer).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Hiệu ứng", command=self._configure_image_transitions).pack(side=tk.LEFT, padx=8)
         
         # Separator
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
@@ -144,8 +160,10 @@ class MainWindow:
     
     def _create_preview_area(self):
         """Create preview area with exact export resolution"""
-        preview_frame = ttk.LabelFrame(self.left_panel, text="Preview (720x1280 - Exact Export Size)")
-        preview_frame.pack(fill=tk.X, padx=5, pady=5)  # Only fill horizontally
+        parent = getattr(self, "preview_side", self.left_panel)
+        preview_frame = ttk.LabelFrame(parent, text="Xem trước (720x1280 - Kích thước xuất chính xác)")
+        # Keep preview anchored to top-left without consuming vertical space
+        preview_frame.pack(anchor=tk.NW, padx=5, pady=5)
         
         # Create container frame for canvas
         canvas_container = ttk.Frame(preview_frame)
@@ -174,8 +192,9 @@ class MainWindow:
     
     def _create_timeline(self):
         """Create timeline"""
-        timeline_frame = ttk.LabelFrame(self.left_panel, text="Timeline")
-        timeline_frame.pack(fill=tk.X, padx=5, pady=5)
+        parent = getattr(self, "timeline_side", self.left_panel)
+        timeline_frame = ttk.LabelFrame(parent, text="Dòng thời gian")
+        timeline_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Timeline controls
         controls_frame = ttk.Frame(timeline_frame)
@@ -192,8 +211,8 @@ class MainWindow:
         self.time_slider.pack(fill=tk.X, padx=5)
         
         # Layer list
-        self.layer_listbox = tk.Listbox(timeline_frame, height=6)
-        self.layer_listbox.pack(fill=tk.X, padx=5, pady=5)
+        self.layer_listbox = tk.Listbox(timeline_frame)
+        self.layer_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.layer_listbox.bind('<<ListboxSelect>>', self._on_layer_list_select)
     
     def _create_status_bar(self):
@@ -201,7 +220,7 @@ class MainWindow:
         self.status_bar = ttk.Frame(self.root)
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
         
-        self.status_label = ttk.Label(self.status_bar, text="Ready")
+        self.status_label = ttk.Label(self.status_bar, text="Sẵn sàng")
         self.status_label.pack(side=tk.LEFT, padx=5)
         
         self.progress_bar = ttk.Progressbar(self.status_bar, mode='determinate')
@@ -227,6 +246,10 @@ class MainWindow:
         selected_layer = self.timeline_manager.get_selected_layer()
         if selected_layer:
             selected_layer.set_property(property_name, value)
+            # Propagate to group if this is an image in a sequential group
+            group_id = getattr(selected_layer, "group_id", None)
+            if group_id:
+                self.timeline_manager.apply_property_to_group(group_id, property_name, value, include_selected_id=selected_layer.layer_id)
             self.preview_canvas.refresh()
     
     def _on_time_change(self, value):
@@ -249,7 +272,7 @@ class MainWindow:
     # Menu actions
     def _new_project(self):
         """Create new project"""
-        if messagebox.askyesno("New Project", "Create a new project? Unsaved changes will be lost."):
+        if messagebox.askyesno("Dự án mới", "Tạo dự án mới? Các thay đổi chưa lưu sẽ bị mất."):
             self.timeline_manager = TimelineManager()
             self.preview_canvas.set_timeline_manager(self.timeline_manager)
             self.property_panel.set_selected_layer(None)
@@ -259,8 +282,8 @@ class MainWindow:
     def _open_project(self):
         """Open existing project"""
         file_path = filedialog.askopenfilename(
-            title="Open Project",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            title="Mở dự án",
+            filetypes=[("Tệp JSON", "*.json"), ("Tất cả tệp", "*.*")]
         )
         if file_path:
             # Implementation for loading project
@@ -269,9 +292,9 @@ class MainWindow:
     def _save_project(self):
         """Save current project"""
         file_path = filedialog.asksaveasfilename(
-            title="Save Project",
+            title="Lưu dự án",
             defaultextension=".json",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            filetypes=[("Tệp JSON", "*.json"), ("Tất cả tệp", "*.*")]
         )
         if file_path:
             # Implementation for saving project
@@ -281,15 +304,11 @@ class MainWindow:
         """Import image files"""
         image_paths = self.asset_loader.select_image_files(self.root)
         if image_paths:
-            # Create slideshow from images
-            slideshow_data = self.asset_loader.create_slideshow_from_images(image_paths, 2.0)
-            for slide in slideshow_data:
-                layer = self.timeline_manager.create_image_layer(
-                    slide["image_path"], 
-                    slide["start_time"], 
-                    slide["end_time"]
-                )
+            self.timeline_manager.add_sequential_images(image_paths, duration_per_image=3.0)
+            # Update time slider max to new duration
+            self.time_slider.configure(to=self.timeline_manager.get_total_duration())
             self._update_layer_list()
+            self.preview_canvas.refresh()
     
     def _import_video(self):
         """Import video file"""
@@ -301,9 +320,9 @@ class MainWindow:
     def _export_video(self):
         """Export video"""
         output_path = filedialog.asksaveasfilename(
-            title="Export Video",
+            title="Xuất video",
             defaultextension=".mp4",
-            filetypes=[("MP4 files", "*.mp4"), ("All files", "*.*")]
+            filetypes=[("Tệp MP4", "*.mp4"), ("Tất cả tệp", "*.*")]
         )
         if output_path:
             timeline_data = self.timeline_manager.export_timeline_data()
@@ -313,14 +332,14 @@ class MainWindow:
             background_music = None
             
             # Optional: Ask for background video
-            if messagebox.askyesno("Background Video", "Do you want to use a background video?"):
+            if messagebox.askyesno("Video nền", "Bạn có muốn sử dụng video nền không?"):
                 background_video = self.asset_loader.select_video_file(self.root)
             
             # Optional: Ask for background music
-            if messagebox.askyesno("Background Music", "Do you want to add background music?"):
+            if messagebox.askyesno("Nhạc nền", "Bạn có muốn thêm nhạc nền không?"):
                 music_files = filedialog.askopenfilenames(
-                    title="Select Background Music",
-                    filetypes=[("Audio files", "*.mp3 *.wav *.aac *.m4a"), ("All files", "*.*")]
+                    title="Chọn nhạc nền",
+                    filetypes=[("Tệp âm thanh", "*.mp3 *.wav *.aac *.m4a"), ("Tất cả tệp", "*.*")]
                 )
                 if music_files:
                     background_music = music_files[0]
@@ -366,7 +385,55 @@ class MainWindow:
     
     def _show_about(self):
         """Show about dialog"""
-        messagebox.showinfo("About", "Video Editor v1.0\nA simple video editing application")
+        messagebox.showinfo("Giới thiệu", "Trình chỉnh sửa video v1.0\nỨng dụng chỉnh sửa video đơn giản")
+
+    def _configure_image_transitions(self):
+        """Open dialog to select image transition effects"""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Hiệu ứng chuyển cảnh")
+        dlg.resizable(False, False)
+        frm = ttk.Frame(dlg)
+        frm.pack(padx=12, pady=12)
+
+        ttk.Label(frm, text="Loại hiệu ứng:").grid(row=0, column=0, sticky="w")
+        trans_var = tk.StringVar(value=self.timeline_manager.image_transition.get("type", "none"))
+        options = [
+            ("Không", "none"),
+            ("Mờ dần", "crossfade"),
+            ("Mờ đen", "fadeblack"),
+            ("Trượt trái", "wipeleft"),
+            ("Trượt phải", "wiperight"),
+            ("Zoom in", "zoomin"),
+            ("Zoom out", "zoomout"),
+            ("Xoay", "rotate"),
+            ("Lật ngang", "flip"),
+        ]
+        combo = ttk.Combobox(frm, state="readonly", values=[o[0] for o in options])
+        # map label to value
+        label_to_value = {o[0]: o[1] for o in options}
+        value_to_label = {o[1]: o[0] for o in options}
+        combo.set(value_to_label.get(trans_var.get(), "Không"))
+        combo.grid(row=0, column=1, padx=8, pady=4)
+
+        ttk.Label(frm, text="Thời lượng (giây):").grid(row=1, column=0, sticky="w")
+        dur_var = tk.DoubleVar(value=float(self.timeline_manager.image_transition.get("duration", 0.5)))
+        dur_entry = ttk.Spinbox(frm, from_=0.0, to=3.0, increment=0.1, textvariable=dur_var, width=6)
+        dur_entry.grid(row=1, column=1, sticky="w", padx=8, pady=4)
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=2, column=0, columnspan=2, pady=(10,0))
+        
+        def on_ok():
+            sel_label = combo.get()
+            sel_value = label_to_value.get(sel_label, "none")
+            self.timeline_manager.image_transition = {
+                "type": sel_value,
+                "duration": max(0.0, float(dur_var.get()))
+            }
+            dlg.destroy()
+        
+        ttk.Button(btns, text="OK", command=on_ok).pack(side=tk.LEFT, padx=6)
+        ttk.Button(btns, text="Hủy", command=dlg.destroy).pack(side=tk.LEFT, padx=6)
     
     # Playback controls
     def _toggle_play(self):
@@ -443,16 +510,18 @@ class MainWindow:
         """Add image layer"""
         image_paths = self.asset_loader.select_image_files(self.root)
         if image_paths:
-            layer = self.timeline_manager.create_image_layer(image_paths[0])
-            
-            # Load the image
-            if layer.load_image(image_paths[0]):
-                print(f"Successfully loaded image: {image_paths[0]}")
-            else:
-                print(f"Failed to load image: {image_paths[0]}")
-            
+            created = self.timeline_manager.add_sequential_images(image_paths, duration_per_image=3.0)
+            if created:
+                # Preload first image for instant feedback
+                first = created[0]
+                first.load_image(image_paths[0])
+                # Ensure cover default if that's your desired default elsewhere
+                # first.fit_mode = "cover"  # Uncomment if you want cover by button add
+                # if hasattr(first, "_update_scaled_image"): first._update_scaled_image()
+                self._on_layer_select(first)
+            # Update time slider max to new duration
+            self.time_slider.configure(to=self.timeline_manager.get_total_duration())
             self._update_layer_list()
-            self._on_layer_select(layer)
             self.preview_canvas.refresh()
     
     def _add_box_layer(self):

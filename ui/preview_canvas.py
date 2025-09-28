@@ -61,15 +61,15 @@ class PreviewCanvas(tk.Canvas):
         """Create drag & drop areas for adding elements"""
         # Text drop area
         self.create_rectangle(50, 50, 150, 100, fill="lightblue", outline="darkblue", width=2, tags="text_drop")
-        self.create_text(100, 75, text="TEXT", fill="darkblue", font=("Arial", 12, "bold"), tags="text_drop")
+        self.create_text(100, 75, text="CHỮ", fill="darkblue", font=("Arial", 12, "bold"), tags="text_drop")
         
         # Image drop area
         self.create_rectangle(200, 50, 300, 100, fill="lightgreen", outline="darkgreen", width=2, tags="image_drop")
-        self.create_text(250, 75, text="IMAGE", fill="darkgreen", font=("Arial", 12, "bold"), tags="image_drop")
+        self.create_text(250, 75, text="ẢNH", fill="darkgreen", font=("Arial", 12, "bold"), tags="image_drop")
         
         # Box drop area
         self.create_rectangle(350, 50, 450, 100, fill="lightcoral", outline="darkred", width=2, tags="box_drop")
-        self.create_text(400, 75, text="BOX", fill="darkred", font=("Arial", 12, "bold"), tags="box_drop")
+        self.create_text(400, 75, text="HỘP", fill="darkred", font=("Arial", 12, "bold"), tags="box_drop")
     
     def set_timeline_manager(self, timeline_manager: TimelineManager):
         """Set timeline manager"""
@@ -106,7 +106,63 @@ class PreviewCanvas(tk.Canvas):
             return
         
         visible_layers = self.timeline_manager.get_layers_at_time(self.current_time)
+
+        # If crossfade is enabled, render overlap of previous/next images
+        transition = getattr(self.timeline_manager, 'image_transition', {"type": "none", "duration": 0.0})
+        trans_type = transition.get("type", "none")
+        trans_dur = float(transition.get("duration", 0.0) or 0.0)
+
+        if trans_type in ("crossfade", "fadeblack", "wipeleft", "wiperight", "zoomin", "zoomout", "rotate", "flip") and trans_dur > 0:
+            # Collect image layers sorted by time
+            all_layers = sorted(self.timeline_manager.get_all_layers(), key=lambda l: getattr(l, 'start_time', 0.0))
+            # Find adjacent image layers around current time
+            prev_img = None
+            next_img = None
+            current_img = None
+            for i, l in enumerate(all_layers):
+                if hasattr(l, 'image_path'):
+                    if getattr(l, 'start_time', 0.0) <= self.current_time <= getattr(l, 'end_time', 0.0):
+                        # l is current image
+                        current_img = l
+                        # Find prev
+                        for j in range(i - 1, -1, -1):
+                            if hasattr(all_layers[j], 'image_path'):
+                                prev_img = all_layers[j]
+                                break
+                        # Find next
+                        for j in range(i + 1, len(all_layers)):
+                            if hasattr(all_layers[j], 'image_path'):
+                                next_img = all_layers[j]
+                                break
+                        break
+
+            # Determine if we are in overlap window at end of current image
+            # Fade out current and fade in next during [end - trans_dur, end]
+            did_crossfade = False
+            
+            # If there is a current image and we are within crossfade window at its end
+            if current_img and hasattr(current_img, 'image_path'):
+                fade_out_start = getattr(current_img, 'end_time', 0.0) - trans_dur
+                if fade_out_start <= self.current_time <= getattr(current_img, 'end_time', 0.0) and next_img:
+                    # Compute opacities
+                    t = (self.current_time - fade_out_start) / trans_dur
+                    t = max(0.0, min(1.0, t))
+                    # current image opacity to end
+                    cur_opacity = 1.0 - t
+                    # next image opacity from start
+                    next_opacity = t
+                    # Draw next image underneath first to avoid covering selection lines
+                    if hasattr(next_img, 'render_preview_with_opacity'):
+                        next_img.render_preview_with_opacity(self, next_opacity)
+                    # Draw current on top with reduced opacity
+                    if hasattr(current_img, 'render_preview_with_opacity'):
+                        current_img.render_preview_with_opacity(self, cur_opacity)
+                    did_crossfade = True
+
+            if did_crossfade:
+                return
         
+        # Default path
         for layer in visible_layers:
             self._render_layer(layer)
         
@@ -117,6 +173,20 @@ class PreviewCanvas(tk.Canvas):
     def _render_layer(self, layer: BaseLayer):
         """Render a single layer"""
         try:
+            # Store original position and size for transition effects
+            if hasattr(layer, 'group_id') and hasattr(layer, 'fit_mode'):  # ImageLayer
+                if not hasattr(layer, '_original_x'):
+                    layer._original_x = layer.x
+                if not hasattr(layer, '_original_y'):
+                    layer._original_y = layer.y
+                if not hasattr(layer, '_original_width'):
+                    layer._original_width = layer.width
+                if not hasattr(layer, '_original_height'):
+                    layer._original_height = layer.height
+                
+                # Apply transition effects for image layers in preview
+                self._apply_image_transition_effects(layer)
+            
             # Apply zoom and pan transformations
             x = int((layer.x + self.pan_x) * self.zoom_level)
             y = int((layer.y + self.pan_y) * self.zoom_level)
@@ -141,6 +211,232 @@ class PreviewCanvas(tk.Canvas):
             print(f"Error rendering layer {layer.layer_id}: {e}")
             import traceback
             traceback.print_exc()
+    
+    def _apply_image_transition_effects(self, layer):
+        """Apply transition effects to image layer in preview"""
+        if not self.timeline_manager:
+            return
+            
+        transition = getattr(self.timeline_manager, 'image_transition', {"type": "none", "duration": 0.0})
+        trans_type = transition.get("type", "none")
+        trans_dur = float(transition.get("duration", 0.0) or 0.0)
+        
+        if trans_type == "crossfade" and trans_dur > 0:
+            # Calculate fade opacity based on current time
+            fade_in_end = layer.start_time + trans_dur
+            fade_out_start = layer.end_time - trans_dur
+            
+            if self.current_time < layer.start_time:
+                # Before layer starts
+                layer.opacity = 0.0
+            elif self.current_time <= fade_in_end:
+                # Fade in phase
+                progress = (self.current_time - layer.start_time) / trans_dur
+                layer.opacity = min(1.0, max(0.0, progress))
+            elif self.current_time <= fade_out_start:
+                # Full visibility phase
+                layer.opacity = 1.0
+            elif self.current_time <= layer.end_time:
+                # Fade out phase
+                progress = (layer.end_time - self.current_time) / trans_dur
+                layer.opacity = min(1.0, max(0.0, progress))
+            else:
+                # After layer ends
+                layer.opacity = 0.0
+        elif trans_type == "fadeblack" and trans_dur > 0:
+            # Fade to black - different from crossfade
+            fade_in_end = layer.start_time + trans_dur
+            fade_out_start = layer.end_time - trans_dur
+            
+            if self.current_time < layer.start_time:
+                layer.opacity = 0.0
+            elif self.current_time <= fade_in_end:
+                progress = (self.current_time - layer.start_time) / trans_dur
+                layer.opacity = min(1.0, max(0.0, progress))
+            elif self.current_time <= fade_out_start:
+                layer.opacity = 1.0
+            elif self.current_time <= layer.end_time:
+                progress = (layer.end_time - self.current_time) / trans_dur
+                layer.opacity = min(1.0, max(0.0, progress))
+            else:
+                layer.opacity = 0.0
+        elif trans_type == "wipeleft" and trans_dur > 0:
+            # Wipe left - slide from right to left
+            if self.current_time < layer.start_time:
+                layer.opacity = 0.0
+                # Move layer off-screen to the right
+                layer.x = layer.width
+            elif self.current_time <= layer.start_time + trans_dur:
+                # Wipe in from right to left
+                progress = (self.current_time - layer.start_time) / trans_dur
+                layer.opacity = 1.0
+                # Slide from right to final position
+                original_x = getattr(layer, '_original_x', layer.x)
+                layer.x = original_x + (1.0 - progress) * layer.width
+            elif self.current_time <= layer.end_time - trans_dur:
+                layer.opacity = 1.0
+                # Restore original position
+                if hasattr(layer, '_original_x'):
+                    layer.x = layer._original_x
+            elif self.current_time <= layer.end_time:
+                # Wipe out from left to right
+                progress = (layer.end_time - self.current_time) / trans_dur
+                layer.opacity = 1.0
+                # Slide from current position to left
+                original_x = getattr(layer, '_original_x', layer.x)
+                layer.x = original_x - (1.0 - progress) * layer.width
+            else:
+                layer.opacity = 0.0
+                layer.x = -layer.width
+        elif trans_type == "wiperight" and trans_dur > 0:
+            # Wipe right - slide from left to right
+            if self.current_time < layer.start_time:
+                layer.opacity = 0.0
+                # Move layer off-screen to the left
+                layer.x = -layer.width
+            elif self.current_time <= layer.start_time + trans_dur:
+                # Wipe in from left to right
+                progress = (self.current_time - layer.start_time) / trans_dur
+                layer.opacity = 1.0
+                # Slide from left to final position
+                original_x = getattr(layer, '_original_x', layer.x)
+                layer.x = original_x - (1.0 - progress) * layer.width
+            elif self.current_time <= layer.end_time - trans_dur:
+                layer.opacity = 1.0
+                # Restore original position
+                if hasattr(layer, '_original_x'):
+                    layer.x = layer._original_x
+            elif self.current_time <= layer.end_time:
+                # Wipe out from right to left
+                progress = (layer.end_time - self.current_time) / trans_dur
+                layer.opacity = 1.0
+                # Slide from current position to right
+                original_x = getattr(layer, '_original_x', layer.x)
+                layer.x = original_x + (1.0 - progress) * layer.width
+            else:
+                layer.opacity = 0.0
+                layer.x = layer.width
+        elif trans_type == "zoomin" and trans_dur > 0:
+            # Zoom in - start small, grow to normal
+            if self.current_time < layer.start_time:
+                layer.opacity = 0.0
+                # Start very small
+                layer.width = 1.0
+                layer.height = 1.0
+            elif self.current_time <= layer.start_time + trans_dur:
+                # Zoom in from small to normal
+                progress = (self.current_time - layer.start_time) / trans_dur
+                layer.opacity = 1.0
+                # Scale from small to normal
+                original_width = getattr(layer, '_original_width', layer.width)
+                original_height = getattr(layer, '_original_height', layer.height)
+                layer.width = 1.0 + (original_width - 1.0) * progress
+                layer.height = 1.0 + (original_height - 1.0) * progress
+            elif self.current_time <= layer.end_time - trans_dur:
+                layer.opacity = 1.0
+                # Restore original size
+                if hasattr(layer, '_original_width'):
+                    layer.width = layer._original_width
+                if hasattr(layer, '_original_height'):
+                    layer.height = layer._original_height
+            elif self.current_time <= layer.end_time:
+                # Zoom out from normal to small
+                progress = (layer.end_time - self.current_time) / trans_dur
+                layer.opacity = 1.0
+                # Scale from normal to small
+                original_width = getattr(layer, '_original_width', layer.width)
+                original_height = getattr(layer, '_original_height', layer.height)
+                layer.width = 1.0 + (original_width - 1.0) * progress
+                layer.height = 1.0 + (original_height - 1.0) * progress
+            else:
+                layer.opacity = 0.0
+                layer.width = 1.0
+                layer.height = 1.0
+        elif trans_type == "zoomout" and trans_dur > 0:
+            # Zoom out - start normal, shrink to small
+            if self.current_time < layer.start_time:
+                layer.opacity = 0.0
+                # Start very small
+                layer.width = 1.0
+                layer.height = 1.0
+            elif self.current_time <= layer.start_time + trans_dur:
+                # Zoom out from normal to small
+                progress = (self.current_time - layer.start_time) / trans_dur
+                layer.opacity = 1.0
+                # Scale from normal to small
+                original_width = getattr(layer, '_original_width', layer.width)
+                original_height = getattr(layer, '_original_height', layer.height)
+                layer.width = original_width - (original_width - 1.0) * progress
+                layer.height = original_height - (original_height - 1.0) * progress
+            elif self.current_time <= layer.end_time - trans_dur:
+                layer.opacity = 1.0
+                # Restore original size
+                if hasattr(layer, '_original_width'):
+                    layer.width = layer._original_width
+                if hasattr(layer, '_original_height'):
+                    layer.height = layer._original_height
+            elif self.current_time <= layer.end_time:
+                # Zoom in from small to normal
+                progress = (layer.end_time - self.current_time) / trans_dur
+                layer.opacity = 1.0
+                # Scale from small to normal
+                original_width = getattr(layer, '_original_width', layer.width)
+                original_height = getattr(layer, '_original_height', layer.height)
+                layer.width = original_width - (original_width - 1.0) * progress
+                layer.height = original_height - (original_height - 1.0) * progress
+            else:
+                layer.opacity = 0.0
+                layer.width = 1.0
+                layer.height = 1.0
+        elif trans_type == "rotate" and trans_dur > 0:
+            # Rotate - spin effect
+            if self.current_time < layer.start_time:
+                layer.opacity = 0.0
+                layer.rotation = 0.0
+            elif self.current_time <= layer.start_time + trans_dur:
+                # Rotate in with spin
+                progress = (self.current_time - layer.start_time) / trans_dur
+                layer.opacity = 1.0
+                # Rotate from 0 to 360 degrees
+                layer.rotation = 360.0 * progress
+            elif self.current_time <= layer.end_time - trans_dur:
+                layer.opacity = 1.0
+                layer.rotation = 0.0
+            elif self.current_time <= layer.end_time:
+                # Rotate out with spin
+                progress = (layer.end_time - self.current_time) / trans_dur
+                layer.opacity = 1.0
+                # Rotate from 0 to 360 degrees
+                layer.rotation = 360.0 * progress
+            else:
+                layer.opacity = 0.0
+                layer.rotation = 0.0
+        elif trans_type == "flip" and trans_dur > 0:
+            # Flip - horizontal flip effect
+            if self.current_time < layer.start_time:
+                layer.opacity = 0.0
+                layer.flip_horizontal = False
+            elif self.current_time <= layer.start_time + trans_dur:
+                # Flip in with horizontal flip
+                progress = (self.current_time - layer.start_time) / trans_dur
+                layer.opacity = 1.0
+                # Toggle flip during transition
+                layer.flip_horizontal = (int(progress * 10) % 2) == 1
+            elif self.current_time <= layer.end_time - trans_dur:
+                layer.opacity = 1.0
+                layer.flip_horizontal = False
+            elif self.current_time <= layer.end_time:
+                # Flip out with horizontal flip
+                progress = (layer.end_time - self.current_time) / trans_dur
+                layer.opacity = 1.0
+                # Toggle flip during transition
+                layer.flip_horizontal = (int(progress * 10) % 2) == 1
+            else:
+                layer.opacity = 0.0
+                layer.flip_horizontal = False
+        else:
+            # No transition, use normal opacity
+            layer.opacity = 1.0 if layer.visible else 0.0
     
     def _draw_selection(self, layer: BaseLayer):
         """Draw selection rectangle around layer with dashed border"""
@@ -394,32 +690,29 @@ class PreviewCanvas(tk.Canvas):
     
     def _create_image_layer_at_position(self, x: int, y: int):
         """Create image layer at position"""
-        # Convert canvas coordinates to layer coordinates
-        layer_x = (x - self.pan_x) / self.zoom_level
-        layer_y = (y - self.pan_y) / self.zoom_level
+        # Default desired placement, ignore click position
+        default_x = 0.0
+        default_y = 120.0
         
         # Open file dialog to select image first
         from tkinter import filedialog
         image_paths = filedialog.askopenfilenames(
-            title="Select Image File",
-            filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.webp"), ("All files", "*.*")]
+            title="Chọn tệp ảnh",
+            filetypes=[("Tệp ảnh", "*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.webp"), ("Tất cả tệp", "*.*")]
         )
         
         if image_paths:
-            # Create layer with selected image path
-            layer = self.timeline_manager.create_image_layer(image_paths[0])
-            layer.set_position(layer_x, layer_y)
-            
-            # Load the image
-            if layer.load_image(image_paths[0]):
-                print(f"Successfully loaded image: {image_paths[0]}")
-            else:
-                print(f"Failed to load image: {image_paths[0]}")
-            
-            self._select_layer(layer)
+            # Create sequential layers with shared position
+            created = self.timeline_manager.add_sequential_images(
+                list(image_paths), duration_per_image=3.0, x=default_x, y=default_y
+            )
+            if created:
+                created[0].load_image(created[0].image_path)
+                self._select_layer(created[0])
+            # Update time slider in main window if accessible via callback
             self.refresh()
         else:
-            print("No image selected")
+            print("Không có ảnh nào được chọn")
     
     def _create_box_layer_at_position(self, x: int, y: int):
         """Create box layer at position"""

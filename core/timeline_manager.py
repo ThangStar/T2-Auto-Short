@@ -2,6 +2,7 @@
 Timeline manager for handling video layers and timing
 """
 from typing import List, Dict, Any, Optional
+import uuid
 from models.base_layer import BaseLayer
 from models.text_layer import TextLayer
 from models.image_layer import ImageLayer
@@ -18,6 +19,8 @@ class TimelineManager:
         self.total_duration = 10.0  # Default 10 seconds
         self.fps = 30
         self.selected_layer: Optional[BaseLayer] = None
+        # Global transition settings for image sequences
+        self.image_transition: Dict[str, Any] = {"type": "none", "duration": 0.5}
         
     def add_layer(self, layer: BaseLayer) -> bool:
         """Add a new layer to timeline"""
@@ -136,6 +139,102 @@ class TimelineManager:
         layer.z_index = len(self.layers)
         self.add_layer(layer)
         return layer
+
+    def add_sequential_images(self, image_paths: List[str], duration_per_image: float = 3.0,
+                               x: Optional[float] = None, y: Optional[float] = None,
+                               width: Optional[float] = None, height: Optional[float] = None) -> List[ImageLayer]:
+        """Create image layers that appear one after another with fixed duration.
+
+        All created image layers share the same position/size if provided.
+        The timeline total_duration is extended to fit the last image.
+        Existing text layers are extended to the new end (keep their start_time).
+        """
+        created_layers: List[ImageLayer] = []
+        current_start = 0.0
+
+        # If there are existing non-text layers with timings, start after the latest end
+        if self.layers:
+            latest_end = 0.0
+            for layer in self.layers:
+                if not isinstance(layer, TextLayer):
+                    latest_end = max(latest_end, layer.end_time)
+            current_start = latest_end
+
+        group_id = f"imggrp_{uuid.uuid4().hex[:8]}"
+
+        # Defaults when not provided
+        if x is None:
+            x = 0.0
+        if y is None:
+            y = 120.0
+        if width is None:
+            width = 720.0
+        if height is None:
+            height = 1050.0
+
+        for idx, path in enumerate(image_paths):
+            start_time = current_start + idx * duration_per_image
+            end_time = start_time + duration_per_image
+            layer = self.create_image_layer(path, start_time, end_time)
+            # Mark group id for synchronized edits later
+            setattr(layer, "group_id", group_id)
+            if x is not None and y is not None:
+                layer.set_position(x, y)
+            if width is not None and height is not None:
+                layer.set_size(width, height)
+            created_layers.append(layer)
+
+        # Inherit position/size and display options from the first image for the rest
+        if len(created_layers) > 1:
+            base = created_layers[0]
+            for layer in created_layers[1:]:
+                layer.set_position(base.x, base.y)
+                layer.set_size(base.width, base.height)
+                # Copy display-related attributes when available
+                try:
+                    layer.fit_mode = getattr(base, "fit_mode", layer.__dict__.get("fit_mode", "cover"))
+                    layer.rotation = getattr(base, "rotation", 0.0)
+                    layer.flip_horizontal = getattr(base, "flip_horizontal", False)
+                    layer.flip_vertical = getattr(base, "flip_vertical", False)
+                    # Recompute scaled image to reflect new fit/size before first render
+                    if hasattr(layer, "_update_scaled_image"):
+                        layer._update_scaled_image()
+                except Exception:
+                    pass
+
+        # Extend total duration to the end of the last created image
+        if created_layers:
+            new_total = max(self.total_duration, created_layers[-1].end_time)
+            self.set_total_duration(new_total)
+
+            # Extend all text layers to the end of the video
+            for layer in self.layers:
+                if isinstance(layer, TextLayer):
+                    layer.end_time = self.total_duration
+
+        return created_layers
+
+    def apply_property_to_group(self, group_id: str, property_name: str, value: Any,
+                                include_selected_id: Optional[str] = None):
+        """Apply a property to all image layers in the same group.
+
+        Only applies to safe-to-sync properties like position, size, and display options.
+        """
+        sync_props = {"x", "y", "width", "height", "fit_mode", "rotation", "flip_horizontal", "flip_vertical"}
+        if property_name not in sync_props:
+            return
+        for layer in self.layers:
+            if isinstance(layer, ImageLayer) and getattr(layer, "group_id", None) == group_id:
+                if include_selected_id and layer.layer_id == include_selected_id:
+                    continue
+                if hasattr(layer, property_name):
+                    setattr(layer, property_name, value)
+                    # Trigger scaled image recompute if size/fit changed
+                    try:
+                        if property_name in ["width", "height", "fit_mode"] and hasattr(layer, "_update_scaled_image"):
+                            layer._update_scaled_image()
+                    except Exception:
+                        pass
     
     def export_timeline_data(self) -> Dict[str, Any]:
         """Export timeline data for saving/loading"""
@@ -143,6 +242,7 @@ class TimelineManager:
             "total_duration": self.total_duration,
             "fps": self.fps,
             "current_time": self.current_time,
+            "image_transition": self.image_transition,
             "layers": [layer.export_data() for layer in self.layers]
         }
     

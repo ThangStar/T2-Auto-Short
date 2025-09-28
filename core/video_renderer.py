@@ -273,7 +273,9 @@ class VideoRenderer:
             if layer.get("type") == "image" and layer.get("image_path"):
                 image_path = layer.get("image_path")
                 if os.path.exists(image_path):
-                    cmd.extend(["-i", image_path])
+                    # Loop static image for entire video duration to allow timed overlays
+                    total_dur = str(timeline_data.get('total_duration', 10.0))
+                    cmd.extend(["-loop", "1", "-t", total_dur, "-i", image_path])
                     image_layers.append({
                         "input_index": input_count,
                         "layer": layer
@@ -297,7 +299,11 @@ class VideoRenderer:
             # Solid color background is already correct size
             current_filter = f"[0:v]"
         
-        # Add image overlays
+        # Add image overlays with optional transitions
+        transition = timeline_data.get("image_transition", {"type": "none", "duration": 0.0})
+        trans_type = transition.get("type", "none")
+        trans_dur = float(transition.get("duration", 0.0) or 0.0)
+
         for i, img_data in enumerate(image_layers):
             layer = img_data["layer"]
             input_idx = img_data["input_index"]
@@ -308,27 +314,86 @@ class VideoRenderer:
             width = layer.get("width", 100)
             height = layer.get("height", 100)
             fit_mode = layer.get("fit_mode", "cover")
+            start_time = float(layer.get("start_time", 0.0))
+            end_time = float(layer.get("end_time", 5.0))
+            enable_expr = f"enable='between(t,{start_time},{end_time})'"
             
+            # Optional fade in/out per layer based on global time
+            # Apply to the image stream before overlay
+            pre = []
+            if trans_type == "crossfade" and trans_dur > 0:
+                # Fade in at layer start
+                pre.append(f"fade=t=in:st={start_time}:d={trans_dur}")
+                # Fade out ending before end_time
+                pre.append(f"fade=t=out:st={max(start_time, end_time - trans_dur)}:d={trans_dur}")
+            elif trans_type == "fadeblack" and trans_dur > 0:
+                # Fade to black
+                pre.append(f"fade=t=in:st={start_time}:d={trans_dur}")
+                pre.append(f"fade=t=out:st={max(start_time, end_time - trans_dur)}:d={trans_dur}")
+            elif trans_type == "wipeleft" and trans_dur > 0:
+                # Wipe left effect using slide
+                pre.append(f"fade=t=in:st={start_time}:d={trans_dur}")
+                pre.append(f"fade=t=out:st={max(start_time, end_time - trans_dur)}:d={trans_dur}")
+            elif trans_type == "wiperight" and trans_dur > 0:
+                # Wipe right effect using slide
+                pre.append(f"fade=t=in:st={start_time}:d={trans_dur}")
+                pre.append(f"fade=t=out:st={max(start_time, end_time - trans_dur)}:d={trans_dur}")
+            elif trans_type == "zoomin" and trans_dur > 0:
+                # Zoom in effect
+                pre.append(f"fade=t=in:st={start_time}:d={trans_dur}")
+                pre.append(f"fade=t=out:st={max(start_time, end_time - trans_dur)}:d={trans_dur}")
+            elif trans_type == "zoomout" and trans_dur > 0:
+                # Zoom out effect
+                pre.append(f"fade=t=in:st={start_time}:d={trans_dur}")
+                pre.append(f"fade=t=out:st={max(start_time, end_time - trans_dur)}:d={trans_dur}")
+            elif trans_type == "rotate" and trans_dur > 0:
+                # Rotation effect
+                pre.append(f"fade=t=in:st={start_time}:d={trans_dur}")
+                pre.append(f"fade=t=out:st={max(start_time, end_time - trans_dur)}:d={trans_dur}")
+            elif trans_type == "flip" and trans_dur > 0:
+                # Flip effect
+                pre.append(f"fade=t=in:st={start_time}:d={trans_dur}")
+                pre.append(f"fade=t=out:st={max(start_time, end_time - trans_dur)}:d={trans_dur}")
+
+            pre_chain = ",".join(pre) if pre else None
+
             # Scale image based on fit mode (matching Tkinter logic)
             if fit_mode == "stretch":
                 scale_filter = f"scale={width}:{height}"
-                overlay_filter = f"[{input_idx}:v]{scale_filter}[img{i}];{current_filter}[img{i}]overlay={x}:{y}:format=auto[v{i}]"
+                stream_in = f"[{input_idx}:v]"
+                if pre_chain:
+                    stream_in = f"{stream_in}{pre_chain},"
+                overlay_filter = f"{stream_in}{scale_filter}[img{i}];{current_filter}[img{i}]overlay={x}:{y}:format=auto:{enable_expr}[v{i}]"
             elif fit_mode == "fit":
                 # Fit within bounds (same as Tkinter min scale)
                 scale_filter = f"scale={width}:{height}:force_original_aspect_ratio=decrease"
-                overlay_filter = f"[{input_idx}:v]{scale_filter}[img{i}];{current_filter}[img{i}]overlay={x}:{y}:format=auto[v{i}]"
+                stream_in = f"[{input_idx}:v]"
+                if pre_chain:
+                    stream_in = f"{stream_in}{pre_chain},"
+                # Center within the target bounds similar to preview centering
+                overlay_filter = f"{stream_in}{scale_filter}[img{i}];{current_filter}[img{i}]overlay={x}+({width}-w)/2:{y}+({height}-h)/2:format=auto:{enable_expr}[v{i}]"
             elif fit_mode == "fill":
                 # Fill bounds (same as Tkinter max scale)
                 scale_filter = f"scale={width}:{height}:force_original_aspect_ratio=increase"
-                overlay_filter = f"[{input_idx}:v]{scale_filter}[img{i}];{current_filter}[img{i}]overlay={x}:{y}:format=auto[v{i}]"
+                stream_in = f"[{input_idx}:v]"
+                if pre_chain:
+                    stream_in = f"{stream_in}{pre_chain},"
+                # Center the possibly larger image (no crop here; use cover for strict crop)
+                overlay_filter = f"{stream_in}{scale_filter}[img{i}];{current_filter}[img{i}]overlay={x}+({width}-w)/2:{y}+({height}-h)/2:format=auto:{enable_expr}[v{i}]"
             elif fit_mode == "cover":
                 # Cover bounds with crop (same as Tkinter max scale + crop)
                 scale_filter = f"scale={width}:{height}:force_original_aspect_ratio=increase"
                 crop_filter = f"crop={width}:{height}"
-                overlay_filter = f"[{input_idx}:v]{scale_filter},{crop_filter}[img{i}];{current_filter}[img{i}]overlay={x}:{y}:format=auto[v{i}]"
+                stream_in = f"[{input_idx}:v]"
+                if pre_chain:
+                    stream_in = f"{stream_in}{pre_chain},"
+                overlay_filter = f"{stream_in}{scale_filter},{crop_filter}[img{i}];{current_filter}[img{i}]overlay={x}:{y}:format=auto:{enable_expr}[v{i}]"
             else:  # original
                 scale_filter = "scale=-1:-1"
-                overlay_filter = f"[{input_idx}:v]{scale_filter}[img{i}];{current_filter}[img{i}]overlay={x}:{y}:format=auto[v{i}]"
+                stream_in = f"[{input_idx}:v]"
+                if pre_chain:
+                    stream_in = f"{stream_in}{pre_chain},"
+                overlay_filter = f"{stream_in}{scale_filter}[img{i}];{current_filter}[img{i}]overlay={x}:{y}:format=auto:{enable_expr}[v{i}]"
             
             video_filters.append(overlay_filter)
             current_filter = f"[v{i}]"
