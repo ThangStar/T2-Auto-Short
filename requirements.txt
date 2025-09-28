@@ -1,0 +1,14 @@
+# Video Editor Dependencies
+# Core dependencies
+Pillow>=9.0.0
+opencv-python>=4.5.0
+
+# Optional dependencies for enhanced functionality
+# moviepy>=1.0.3  # For advanced video processing
+# numpy>=1.21.0   # For numerical operations
+# matplotlib>=3.5.0  # For plotting and visualization
+
+# Development dependencies (optional)
+# pytest>=6.0.0  # For testing
+# black>=22.0.0   # For code formatting
+# flake8>=4.0.0   # For linting
