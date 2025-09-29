@@ -15,6 +15,10 @@ class BoxLayer(BaseLayer):
         self.fill_opacity = 0.5
         self.border_color = "#000000"
         self.border_width = 2
+        self.width = 720
+        self.x = 0
+        self.y = 0
+        self.height = 120
         self.border_style = "solid"  # solid, dashed, dotted
         self.corner_radius = 0  # For rounded rectangles
         self.gradient = False
@@ -55,22 +59,43 @@ class BoxLayer(BaseLayer):
         if not self.is_visible_at_time(current_time):
             return
         
-        # Calculate final opacity
-        final_opacity = self.opacity * self.fill_opacity
+        # Read zoom/pan from canvas to match preview transforms
+        zoom = getattr(canvas, "zoom_level", 1.0)
+        pan_x = getattr(canvas, "pan_x", 0)
+        pan_y = getattr(canvas, "pan_y", 0)
+
+        # Scale and translate coordinates consistently with preview
+        x1 = int((self.x + pan_x) * zoom)
+        y1 = int((self.y + pan_y) * zoom)
+        x2 = int((self.x + self.width + pan_x) * zoom)
+        y2 = int((self.y + self.height + pan_y) * zoom)
+
+        # Calculate final opacity and map to Tkinter stipple pattern
+        final_opacity = max(0.0, min(1.0, self.opacity * self.fill_opacity))
+        if final_opacity >= 0.95:
+            stipple = ""
+        elif final_opacity >= 0.7:
+            stipple = "gray12"
+        elif final_opacity >= 0.45:
+            stipple = "gray25"
+        elif final_opacity >= 0.25:
+            stipple = "gray50"
+        else:
+            stipple = "gray75"
         
         # Draw fill
         if self.fill_opacity > 0:
             if self.corner_radius > 0:
                 # Rounded rectangle
                 self._draw_rounded_rectangle(
-                    canvas, self.x, self.y, self.x + self.width, self.y + self.height,
+                    canvas, x1, y1, x2, y2,
                     self.corner_radius, self.fill_color, final_opacity
                 )
             else:
                 # Regular rectangle
                 fill_item = canvas.create_rectangle(
-                    self.x, self.y, self.x + self.width, self.y + self.height,
-                    fill=self.fill_color, outline="", stipple="gray50"
+                    x1, y1, x2, y2,
+                    fill=self.fill_color, outline="", stipple=stipple
                 )
         
         # Draw gradient if enabled
@@ -86,8 +111,8 @@ class BoxLayer(BaseLayer):
                 dash_pattern = (2, 2)
             
             border_item = canvas.create_rectangle(
-                self.x, self.y, self.x + self.width, self.y + self.height,
-                outline=self.border_color, width=self.border_width,
+                x1, y1, x2, y2,
+                outline=self.border_color, width=max(1, int(self.border_width * zoom)),
                 dash=dash_pattern
             )
     

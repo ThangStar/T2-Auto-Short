@@ -9,6 +9,7 @@ from .property_panel import PropertyPanel
 from core.timeline_manager import TimelineManager
 from core.asset_loader import AssetLoader
 from core.video_renderer import VideoRenderer
+from core.video_renderer import VideoRenderer
 
 
 class MainWindow:
@@ -19,6 +20,7 @@ class MainWindow:
         self.root.title("Video Editor")
         self.root.geometry("1400x900")
         self.root.minsize(1000, 700)
+        self.root.state("zoomed")
         
         # Configure modern Bootstrap-like styling
         self._configure_styles()
@@ -37,6 +39,7 @@ class MainWindow:
         self.current_time = 0.0
         self.is_playing = False
         self.play_timer = None
+        self.background_music_path: Optional[str] = None
         
         self._create_ui()
         self._setup_bindings()
@@ -211,6 +214,21 @@ class MainWindow:
         
         # Store style reference for potential fallback
         self.style = style
+
+    def _select_background_music(self):
+        """Select or clear background music for the export"""
+        answer = messagebox.askyesno("Background Music", "Would you like to select a background music file?")
+        if not answer:
+            if self.background_music_path:
+                if messagebox.askyesno("Background Music", "Clear the current background music?"):
+                    self.background_music_path = None
+            return
+        file_path = filedialog.askopenfilename(
+            title="Select Background Music",
+            filetypes=[("Audio Files", "*.mp3 *.wav *.aac *.m4a"), ("All Files", "*.*")]
+        )
+        if file_path:
+            self.background_music_path = file_path
     
     def _create_styled_button(self, parent, text, command, style_name='TButton', **kwargs):
         """Create a styled button with fallback support"""
@@ -382,6 +400,7 @@ class MainWindow:
         self._create_styled_button(toolbar, text="Add Image", command=self._add_image_layer, style_name='Success.TButton').pack(side=tk.LEFT, padx=4)
         self._create_styled_button(toolbar, text="Add Box", command=self._add_box_layer, style_name='Success.TButton').pack(side=tk.LEFT, padx=4)
         self._create_styled_button(toolbar, text="Effects", command=self._configure_image_transitions, style_name='Info.TButton').pack(side=tk.LEFT, padx=12)
+        self._create_styled_button(toolbar, text="Music", command=self._select_background_music, style_name='Info.TButton').pack(side=tk.LEFT, padx=4)
         
         # Separator
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=20)
@@ -407,7 +426,12 @@ class MainWindow:
             timeline_manager=self.timeline_manager,
             on_layer_select=self._on_layer_select
         )
-        self.preview_canvas.pack()
+        # Add vertical scrollbar for preview
+        vscroll = ttk.Scrollbar(canvas_container, orient=tk.VERTICAL, command=self.preview_canvas.yview)
+        self.preview_canvas.configure(yscrollcommand=vscroll.set)
+        # Layout: canvas left, scrollbar right
+        self.preview_canvas.pack(side=tk.LEFT)
+        vscroll.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Canvas is already set to 720x1280 in __init__
     
@@ -518,8 +542,29 @@ class MainWindow:
             filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
         )
         if file_path:
-            # Implementation for loading project
-            pass
+            try:
+                import json
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                # Load timeline
+                ok = self.timeline_manager.import_timeline_data(data.get("timeline", data))
+                if not ok:
+                    messagebox.showerror("Open Project", "Failed to load project timeline data.")
+                    return
+                # Apply background music if present
+                self.background_music_path = data.get("background_music")
+                # Rewire UI to new timeline
+                self.preview_canvas.set_timeline_manager(self.timeline_manager)
+                self.property_panel.set_selected_layer(None)
+                # Update time slider and display
+                self.time_slider.configure(to=self.timeline_manager.get_total_duration())
+                self.time_slider.set(self.timeline_manager.get_current_time())
+                self._update_layer_list()
+                self.preview_canvas.refresh()
+                self._update_time_display()
+                self.status_label.config(text=f"Loaded: {file_path}")
+            except Exception as e:
+                messagebox.showerror("Open Project", f"Error loading project: {e}")
     
     def _save_project(self):
         """Save current project"""
@@ -529,8 +574,22 @@ class MainWindow:
             filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
         )
         if file_path:
-            # Implementation for saving project
-            pass
+            try:
+                import json
+                timeline_data = self.timeline_manager.export_timeline_data()
+                project = {
+                    "timeline": timeline_data,
+                    "background_music": self.background_music_path,
+                    "app": {
+                        "name": "Video Editor",
+                        "version": "1.0.0"
+                    }
+                }
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(project, f, ensure_ascii=False, indent=2)
+                self.status_label.config(text=f"Saved: {file_path}")
+            except Exception as e:
+                messagebox.showerror("Save Project", f"Error saving project: {e}")
     
     def _import_images(self):
         """Import image files"""
@@ -559,23 +618,24 @@ class MainWindow:
         if output_path:
             timeline_data = self.timeline_manager.export_timeline_data()
             
-            # Ask for background video and music
+            # Ask for background video; use selected music from toolbar if set
             background_video = None
-            background_music = None
-            
-            # Optional: Ask for background video
             if messagebox.askyesno("Background Video", "Would you like to use a background video?"):
                 background_video = self.asset_loader.select_video_file(self.root)
             
-            # Optional: Ask for background music
-            if messagebox.askyesno("Background Music", "Would you like to add background music?"):
-                music_files = filedialog.askopenfilenames(
-                    title="Select Background Music",
-                    filetypes=[("Audio Files", "*.mp3 *.wav *.aac *.m4a"), ("All Files", "*.*")]
-                )
-                if music_files:
-                    background_music = music_files[0]
-            
+            background_music = self.background_music_path
+            if background_music is None:
+                if messagebox.askyesno("Background Music", "Would you like to add background music?"):
+                    music_files = filedialog.askopenfilenames(
+                        title="Select Background Music",
+                        filetypes=[("Audio Files", "*.mp3 *.wav *.aac *.m4a"), ("All Files", "*.*")]
+                    )
+                    if music_files:
+                        background_music = music_files[0]
+                        self.background_music_path = background_music
+            # Show modal progress dialog before starting render
+            self._show_render_progress_dialog()
+
             self.video_renderer.render_video(
                 timeline_data, 
                 output_path,
@@ -583,6 +643,61 @@ class MainWindow:
                 background_music=background_music,
                 progress_callback=self._on_render_progress
             )
+
+    def _show_render_progress_dialog(self):
+        """Create and show a modal progress dialog for rendering."""
+        # If already showing, reuse
+        if hasattr(self, "progress_window") and self.progress_window and tk.Toplevel.winfo_exists(self.progress_window):
+            return
+        self.progress_window = tk.Toplevel(self.root)
+        self.progress_window.title("Exporting Video")
+        self.progress_window.transient(self.root)
+        self.progress_window.grab_set()
+        self.progress_window.resizable(False, False)
+        self.progress_window.protocol("WM_DELETE_WINDOW", self._on_cancel_render)
+
+        container = ttk.Frame(self.progress_window, padding=20)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        title_lbl = ttk.Label(container, text="Exporting...", font=("Segoe UI", 12, "bold"))
+        title_lbl.pack(anchor=tk.W)
+
+        self.status_label = ttk.Label(container, text="Initializing render...", foreground="#495057")
+        self.status_label.pack(fill=tk.X, pady=(8, 6))
+
+        self.progress_bar = ttk.Progressbar(container, orient=tk.HORIZONTAL, length=360, mode='determinate', maximum=100)
+        self.progress_bar.pack(fill=tk.X)
+
+        btn_row = ttk.Frame(container)
+        btn_row.pack(fill=tk.X, pady=(12, 0))
+        self.cancel_btn = ttk.Button(btn_row, text="Cancel", command=self._on_cancel_render)
+        self.cancel_btn.pack(side=tk.RIGHT)
+
+        # Center dialog relative to parent
+        self.progress_window.update_idletasks()
+        px = self.root.winfo_rootx()
+        py = self.root.winfo_rooty()
+        pw = self.root.winfo_width()
+        ph = self.root.winfo_height()
+        ww = self.progress_window.winfo_width()
+        wh = self.progress_window.winfo_height()
+        x = px + (pw - ww) // 2
+        y = py + (ph - wh) // 2
+        self.progress_window.geometry(f"+{x}+{y}")
+
+    def _on_cancel_render(self):
+        """Handle cancel action from progress dialog."""
+        try:
+            if hasattr(self, "video_renderer") and self.video_renderer and self.video_renderer.is_rendering:
+                self.video_renderer.cancel_render()
+        except Exception:
+            pass
+        # Disable button to prevent repeat
+        if hasattr(self, "cancel_btn") and self.cancel_btn:
+            self.cancel_btn.state(["disabled"]) 
+        # Update status
+        if hasattr(self, "status_label") and self.status_label:
+            self.status_label.config(text="Cancelling...")
     
     def _undo(self):
         """Undo last action"""
@@ -771,9 +886,30 @@ class MainWindow:
     
     def _on_render_progress(self, progress, status):
         """Handle render progress"""
-        self.progress_bar['value'] = progress * 100
-        self.status_label.config(text=status)
+        # Ensure dialog exists
+        if not hasattr(self, "progress_window") or not tk.Toplevel.winfo_exists(self.progress_window):
+            self._show_render_progress_dialog()
+        # Update UI
+        if hasattr(self, "progress_bar") and self.progress_bar:
+            self.progress_bar['value'] = max(0, min(100, progress * 100))
+        if hasattr(self, "status_label") and self.status_label:
+            self.status_label.config(text=status)
         self.root.update_idletasks()
+
+        # Close on completion or failure
+        status_lower = (status or "").lower()
+        if progress >= 1.0 or "complete" in status_lower or "failed" in status_lower or "error" in status_lower or not getattr(self.video_renderer, "is_rendering", False):
+            try:
+                if hasattr(self, "progress_window") and tk.Toplevel.winfo_exists(self.progress_window):
+                    self.progress_window.grab_release()
+                    self.progress_window.destroy()
+            except Exception:
+                pass
+            # Notify user
+            if "complete" in status_lower or progress >= 1.0:
+                messagebox.showinfo("Export", "Video export completed successfully.")
+            elif "failed" in status_lower or "error" in status_lower:
+                messagebox.showerror("Export", f"Video export failed: {status}")
     
     def run(self):
         """Run the application"""

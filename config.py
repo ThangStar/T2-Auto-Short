@@ -82,6 +82,8 @@ for directory in [TEMP_DIR, EXPORT_DIR, PROJECT_DIR]:
 # Debug settings
 DEBUG_MODE = False
 VERBOSE_LOGGING = False
+CANVAS_PREVIEW_SCALE = 1
+
 
 # Performance settings
 MAX_CACHE_SIZE = 100  # Maximum number of cached assets

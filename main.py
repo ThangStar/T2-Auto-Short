@@ -34,7 +34,6 @@ def check_dependencies():
             "\n\nPlease install them using:\npip install " + " ".join(missing_deps)
         )
         return False
-    
     return True
 
 

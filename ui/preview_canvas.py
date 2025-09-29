@@ -6,6 +6,7 @@ from tkinter import ttk
 from typing import Optional, Callable, List
 from core.timeline_manager import TimelineManager
 from models.base_layer import BaseLayer
+from config import CANVAS_PREVIEW_SCALE
 
 
 class PreviewCanvas(tk.Canvas):
@@ -15,12 +16,21 @@ class PreviewCanvas(tk.Canvas):
         # 9:16 aspect ratio for short video - exact same size as export
         self.canvas_width = 720   # Same as video export width
         self.canvas_height = 1280 # Same as video export height
-        super().__init__(parent, bg="lightgray", width=self.canvas_width, height=self.canvas_height)
+        # Visual scale for the widget size
+        self.display_scale = CANVAS_PREVIEW_SCALE
+        super().__init__(
+            parent,
+            bg="lightgray",
+            width=int(self.canvas_width * self.display_scale),
+            height=int(self.canvas_height * self.display_scale)
+        )
+        # Set scrollregion to the full scaled content size
+        self.configure(scrollregion=(0, 0, int(self.canvas_width * self.display_scale), int(self.canvas_height * self.display_scale)))
         
         self.timeline_manager = timeline_manager
         self.on_layer_select = on_layer_select
         self.current_time = 0.0
-        self.zoom_level = 1.0
+        self.zoom_level = CANVAS_PREVIEW_SCALE
         self.pan_x = 0
         self.pan_y = 0
         
@@ -83,7 +93,12 @@ class PreviewCanvas(tk.Canvas):
         self.canvas_height = 1280
         
         # Update canvas size
-        self.config(width=self.canvas_width, height=self.canvas_height)
+        self.config(
+            width=int(self.canvas_width * self.display_scale),
+            height=int(self.canvas_height * self.display_scale)
+        )
+        # Update scrollregion to match new size
+        self.configure(scrollregion=(0, 0, int(self.canvas_width * self.display_scale), int(self.canvas_height * self.display_scale)))
         
         # Refresh to redraw everything
         self.refresh()
@@ -737,7 +752,7 @@ class PreviewCanvas(tk.Canvas):
     
     def reset_zoom(self):
         """Reset zoom level"""
-        self.zoom_level = 1.0
+        self.zoom_level = CANVAS_PREVIEW_SCALE
         self.pan_x = 0
         self.pan_y = 0
         self.refresh()

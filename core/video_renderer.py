@@ -162,8 +162,8 @@ class VideoRenderer:
         f.write("Style: Text,Arial,24,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1\n")
         f.write("Style: TextBg,Arial,24,&H00000000,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1\n")
         
-        # Box styles
-        f.write("Style: Box,Arial,24,&H00FF0000,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1\n")
+        # Box style (neutral). Real colors will be set per-dialogue via inline overrides.
+        f.write("Style: Box,Arial,24,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1\n")
     
     def _write_layer_to_ass(self, f, layer_data: Dict[str, Any], video_width: int, video_height: int):
         """Write a layer to ASS file"""
@@ -230,17 +230,24 @@ class VideoRenderer:
         border_color = layer_data.get("border_color", "#000000")
         border_width = layer_data.get("border_width", 2)
         
-        # Convert colors to ASS format
+        # Convert colors to ASS format (BGR order). Alpha handled via inline overrides.
         fill_color_ass = self._hex_to_ass_color(fill_color)
         border_color_ass = self._hex_to_ass_color(border_color)
         
-        # Write box style
-        f.write(f"Style: Box,Arial,24,{fill_color_ass},&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1\n")
-        
-        # Write box rectangle
+        # Compute alpha overrides: ASS uses &HAA (00 opaque, FF transparent)
+        fill_alpha = max(0, min(255, int(round((1.0 - float(fill_opacity)) * 255))))
+        border_alpha = 0  # keep border opaque
+        fill_alpha_hex = f"&H{fill_alpha:02X}"
+        border_alpha_hex = f"&H{border_alpha:02X}"
+
+        # Write box rectangle with per-dialogue color/alpha overrides
         center_x = x + width // 2
         center_y = y + height // 2
-        f.write(f"Dialogue: 0,{start_ass},{end_ass},Box,,0,0,0,,{{\\an5\\bord{border_width}\\shad0\\fscx100\\fscy100\\pos({center_x},{center_y})\\p1}}m 0 0 l {width} 0 l {width} {height} l 0 {height}{{\\p0}}\n")
+        f.write(
+            f"Dialogue: 0,{start_ass},{end_ass},Box,,0,0,0,,"
+            f"{{\\an5\\bord{border_width}\\shad0\\1c{fill_color_ass}\\3c{border_color_ass}\\1a{fill_alpha_hex}\\3a{border_alpha_hex}\\fscx100\\fscy100\\pos({center_x},{center_y})\\p1}}"
+            f"m 0 0 l {width} 0 l {width} {height} l 0 {height}{{\\p0}}\n"
+        )
     
     def _write_image_layer_to_ass(self, f, layer_data: Dict[str, Any], start_ass: str, end_ass: str, 
                                   x: float, y: float, width: float, height: float):
@@ -283,7 +290,9 @@ class VideoRenderer:
                     input_count += 1
         
         if background_music and os.path.exists(background_music):
-            cmd.extend(["-i", background_music])
+            # Add background music and loop/trim to match video duration
+            total_dur = str(timeline_data.get('total_duration', 10.0))
+            cmd.extend(["-stream_loop", "-1", "-t", total_dur, "-i", background_music])
             input_count += 1
         
         # Build video filter chain
@@ -415,9 +424,9 @@ class VideoRenderer:
         video_params = self._get_video_params(quality, fps)
         cmd.extend(video_params)
         
-        # Audio parameters
+        # Audio parameters: map the last input audio and end with video duration
         if background_music and os.path.exists(background_music):
-            cmd.extend(["-c:a", "aac", "-b:a", "128k"])
+            cmd.extend(["-map", f"{input_count-1}:a:0", "-c:a", "aac", "-b:a", "128k", "-shortest"])
         
         cmd.append(output_path)
         
@@ -430,17 +439,54 @@ class VideoRenderer:
     
     def _get_video_params(self, quality: str, fps: int) -> List[str]:
         """Get video encoding parameters based on quality"""
+        # Prefer AMD AMF if available on this system; fallback to libx264 (CPU)
+        encoder = self._choose_h264_encoder()
+        if encoder == "h264_amf":
+            if quality == "high":
+                return [
+                    "-c:v", "h264_amf",
+                    "-usage", "transcoding",
+                    "-quality", "quality",
+                    "-profile:v", "high",
+                    "-rc", "vbr_peak",
+                    "-b:v", "8M",
+                    "-maxrate", "10M",
+                    "-g", str(int(fps * 2)),
+                    "-pix_fmt", "yuv420p"
+                ]
+            elif quality == "medium":
+                return [
+                    "-c:v", "h264_amf",
+                    "-usage", "transcoding",
+                    "-quality", "speed",
+                    "-profile:v", "high",
+                    "-rc", "vbr_peak",
+                    "-b:v", "4M",
+                    "-maxrate", "5M",
+                    "-g", str(int(fps * 2)),
+                    "-pix_fmt", "yuv420p"
+                ]
+            else:  # low
+                return [
+                    "-c:v", "h264_amf",
+                    "-usage", "transcoding",
+                    "-quality", "speed",
+                    "-profile:v", "high",
+                    "-rc", "vbr_peak",
+                    "-b:v", "1500k",
+                    "-maxrate", "2000k",
+                    "-g", str(int(fps * 2)),
+                    "-pix_fmt", "yuv420p"
+                ]
+
+        # Fallback: CPU libx264
         if quality == "high":
             return [
-                "-c:v", "h264_nvenc",
-                "-preset", "p7",
-                "-tune", "hq",
+                "-c:v", "libx264",
+                "-preset", "slow",
+                "-tune", "film",
                 "-profile:v", "high",
-                "-rc", "vbr",
-                "-cq", "18",
-                "-b:v", "6M",
-                "-maxrate", "8M",
-                "-bufsize", "12M",
+                "-crf", "18",
                 "-g", str(int(fps * 2)),
                 "-bf", "3",
                 "-refs", "5",
@@ -448,20 +494,38 @@ class VideoRenderer:
             ]
         elif quality == "medium":
             return [
-                "-c:v", "h264_nvenc",
-                "-preset", "p4",
-                "-tune", "hq",
-                "-b:v", "2M",
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-tune", "film",
+                "-crf", "23",
                 "-pix_fmt", "yuv420p"
             ]
         else:  # low
             return [
-                "-c:v", "h264_nvenc",
-                "-preset", "p4",
-                "-tune", "hq",
-                "-b:v", "500k",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-tune", "film",
+                "-crf", "28",
                 "-pix_fmt", "yuv420p"
             ]
+
+    def _choose_h264_encoder(self) -> str:
+        """Choose best available H.264 encoder: prefer h264_amf when available."""
+        try:
+            # Query available encoders from ffmpeg
+            result = subprocess.run(
+                ["ffmpeg", "-v", "0", "-hide_banner", "-encoders"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            text_out = (result.stdout or "") + (result.stderr or "")
+            # Simple substring check is sufficient
+            if "h264_amf" in text_out:
+                return "h264_amf"
+        except Exception:
+            pass
+        return "libx264"
     
     def _execute_ffmpeg_command(self, cmd: List[str], progress_callback: Optional[Callable[[float, str], None]]) -> bool:
         """Execute FFmpeg command with progress tracking"""

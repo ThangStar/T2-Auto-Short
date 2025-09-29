@@ -13,6 +13,11 @@ class TextLayer(BaseLayer):
     def __init__(self, layer_id: str, text: str = "Sample Text", start_time: float = 0.0, end_time: float = 5.0):
         super().__init__(layer_id, start_time, end_time)
         self.text = text
+        # Default new text should span full video width
+        self.width = 720
+        self.x = 0
+        self.y = 0
+        self.height = 120
         self.font_family = "Arial"
         self.font_size = 24
         self.font_color = "#FFFFFF"
