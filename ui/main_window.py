@@ -6,6 +6,7 @@ from tkinter import ttk, messagebox, filedialog
 from typing import Optional, Callable
 from .preview_canvas import PreviewCanvas
 from .property_panel import PropertyPanel
+from .layer_panel import LayerPanel
 from core.timeline_manager import TimelineManager
 from core.asset_loader import AssetLoader
 from core.video_renderer import VideoRenderer
@@ -33,6 +34,7 @@ class MainWindow:
         # UI components
         self.preview_canvas: Optional[PreviewCanvas] = None
         self.property_panel: Optional[PropertyPanel] = None
+        self.layer_panel: Optional[LayerPanel] = None
         self.timeline_frame: Optional[tk.Frame] = None
         
         # Current state
@@ -40,6 +42,9 @@ class MainWindow:
         self.is_playing = False
         self.play_timer = None
         self.background_music_path: Optional[str] = None
+        self.background_music_volume: float = 1.0
+        self.voice_path: Optional[str] = None
+        self.voice_volume: float = 1.0
         
         self._create_ui()
         self._setup_bindings()
@@ -54,28 +59,28 @@ class MainWindow:
         except:
             pass  # Fall back to default theme if clam is not available
         
-        # Configure modern color scheme inspired by Bootstrap
+        # Bootstrap color scheme
         style.configure('TButton',
-                       background='#007bff',
+                       background='#6c757d',
                        foreground='white',
                        borderwidth=1,
                        relief='solid',
                        focuscolor='none',
                        padding=(12, 8),
-                       font=('Segoe UI', 9))
+                       font=('Inter', 9))
         
         style.map('TButton',
-                 background=[('active', '#0056b3'),
-                           ('pressed', '#004085'),
+                 background=[('active', '#5a6268'),
+                           ('pressed', '#545b62'),
                            ('disabled', '#6c757d')])
         
-        # Configure primary buttons (blue)
+        # Bootstrap Primary buttons
         style.configure('Primary.TButton',
                        background='#007bff',
                        foreground='white',
                        borderwidth=1,
                        relief='solid',
-                       font=('Segoe UI', 9, 'bold'),
+                       font=('Inter', 9, 'bold'),
                        padding=(12, 8))
         
         style.map('Primary.TButton',
@@ -83,13 +88,13 @@ class MainWindow:
                            ('pressed', '#004085'),
                            ('disabled', '#6c757d')])
         
-        # Configure secondary buttons (gray)
+        # Bootstrap Secondary buttons
         style.configure('Secondary.TButton',
                        background='#6c757d',
                        foreground='white',
                        borderwidth=1,
                        relief='solid',
-                       font=('Segoe UI', 9),
+                       font=('Inter', 9),
                        padding=(12, 8))
         
         style.map('Secondary.TButton',
@@ -97,13 +102,13 @@ class MainWindow:
                            ('pressed', '#545b62'),
                            ('disabled', '#adb5bd')])
         
-        # Configure success buttons (green)
+        # Bootstrap Success buttons
         style.configure('Success.TButton',
                        background='#28a745',
                        foreground='white',
                        borderwidth=1,
                        relief='solid',
-                       font=('Segoe UI', 9),
+                       font=('Inter', 9),
                        padding=(12, 8))
         
         style.map('Success.TButton',
@@ -111,13 +116,13 @@ class MainWindow:
                            ('pressed', '#1e7e34'),
                            ('disabled', '#6c757d')])
         
-        # Configure danger buttons (red)
+        # Bootstrap Danger buttons
         style.configure('Danger.TButton',
                        background='#dc3545',
                        foreground='white',
                        borderwidth=1,
                        relief='solid',
-                       font=('Segoe UI', 9),
+                       font=('Inter', 9),
                        padding=(12, 8))
         
         style.map('Danger.TButton',
@@ -125,13 +130,13 @@ class MainWindow:
                            ('pressed', '#bd2130'),
                            ('disabled', '#6c757d')])
         
-        # Configure info buttons (cyan)
+        # Bootstrap Info buttons
         style.configure('Info.TButton',
                        background='#17a2b8',
                        foreground='white',
                        borderwidth=1,
                        relief='solid',
-                       font=('Segoe UI', 9),
+                       font=('Inter', 9),
                        padding=(12, 8))
         
         style.map('Info.TButton',
@@ -139,30 +144,43 @@ class MainWindow:
                            ('pressed', '#117a8b'),
                            ('disabled', '#6c757d')])
         
-        # Configure labels
+        # Bootstrap labels
         style.configure('TLabel',
-                       background='white',
+                       background='#ffffff',
                        foreground='#212529',
-                       font=('Segoe UI', 9))
+                       font=('Inter', 10))
         
-        # Configure frames
+        # Bootstrap header labels
+        style.configure('Header.TLabel',
+                       background='#ffffff',
+                       foreground='#007bff',
+                       font=('Inter', 12, 'bold'))
+        
+        # Configure frames with consistent colors
         style.configure('TFrame',
-                       background='white')
+                       background='#ffffff',
+                       relief='flat')
         
-        # Configure LabelFrame with modern styling
+        # Bootstrap card-style frames
+        style.configure('Card.TFrame',
+                       background='#ffffff',
+                       relief='solid',
+                       borderwidth=1)
+        
+        # Bootstrap LabelFrame styling
         style.configure('TLabelframe',
-                       background='white',
-                       foreground='#495057',
-                       font=('Segoe UI', 10, 'bold'),
+                       background='#ffffff',
+                       foreground='#212529',
+                       font=('Inter', 11, 'bold'),
                        borderwidth=1,
                        relief='solid')
         
         style.configure('TLabelframe.Label',
-                       background='white',
-                       foreground='#495057',
-                       font=('Segoe UI', 10, 'bold'))
+                       background='#ffffff',
+                       foreground='#007bff',
+                       font=('Inter', 11, 'bold'))
         
-        # Configure progress bar
+        # Bootstrap progress bar
         style.configure('TProgressbar',
                        background='#007bff',
                        troughcolor='#e9ecef',
@@ -170,46 +188,46 @@ class MainWindow:
                        lightcolor='#007bff',
                        darkcolor='#007bff')
         
-        # Configure scale/slider
+        # Bootstrap scale/slider
         style.configure('TScale',
-                       background='white',
+                       background='#ffffff',
                        troughcolor='#e9ecef',
                        sliderlength=20,
                        sliderrelief='flat')
         
-        # Configure combobox
+        # Bootstrap combobox
         style.configure('TCombobox',
-                       fieldbackground='white',
-                       background='white',
-                       foreground='#495057',
-                       font=('Segoe UI', 9),
+                       fieldbackground='#ffffff',
+                       background='#ffffff',
+                       foreground='#212529',
+                       font=('Inter', 10),
                        borderwidth=1,
                        relief='solid')
         
-        # Configure spinbox
+        # Bootstrap spinbox
         style.configure('TSpinbox',
-                       fieldbackground='white',
-                       background='white',
-                       foreground='#495057',
-                       font=('Segoe UI', 9),
+                       fieldbackground='#ffffff',
+                       background='#ffffff',
+                       foreground='#212529',
+                       font=('Inter', 10),
                        borderwidth=1,
                        relief='solid')
         
-        # Configure listbox
+        # Bootstrap listbox
         style.configure('TListbox',
-                       background='white',
-                       foreground='#495057',
-                       font=('Segoe UI', 9),
+                       background='#ffffff',
+                       foreground='#212529',
+                       font=('Inter', 10),
                        selectbackground='#007bff',
                        selectforeground='white',
                        borderwidth=1,
                        relief='solid')
         
-        # Configure separators
+        # Bootstrap separators
         style.configure('TSeparator',
                        background='#dee2e6')
         
-        # Set root background to light gray
+        # Bootstrap root background
         self.root.configure(bg='#f8f9fa')
         
         # Store style reference for potential fallback
@@ -229,6 +247,108 @@ class MainWindow:
         )
         if file_path:
             self.background_music_path = file_path
+
+    def _open_music_config(self):
+        """Open a dialog to choose music file and volume."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Music Settings")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        frm = ttk.Frame(dlg, padding=16)
+        frm.pack(fill=tk.BOTH, expand=True)
+
+        # File row
+        ttk.Label(frm, text="File:").grid(row=0, column=0, sticky="w")
+        file_var = tk.StringVar(value=self.background_music_path or "")
+        file_entry = ttk.Entry(frm, textvariable=file_var, width=42)
+        file_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
+        def on_browse():
+            path = filedialog.askopenfilename(
+                title="Select Background Music",
+                filetypes=[("Audio Files", "*.mp3 *.wav *.aac *.m4a"), ("All Files", "*.*")]
+            )
+            if path:
+                file_var.set(path)
+        ttk.Button(frm, text="Browse", command=on_browse).grid(row=0, column=2, sticky="w")
+
+        # Volume row
+        ttk.Label(frm, text="Volume:").grid(row=1, column=0, sticky="w", pady=(12, 0))
+        vol_var = tk.DoubleVar(value=self.background_music_volume)
+        vol_scale = ttk.Scale(frm, from_=0.0, to=1.0, orient=tk.HORIZONTAL, variable=vol_var)
+        vol_scale.grid(row=1, column=1, sticky="ew", padx=(8, 8), pady=(12, 0))
+        vol_val_lbl = ttk.Label(frm, text=f"{self.background_music_volume:.2f}")
+        vol_val_lbl.grid(row=1, column=2, sticky="w", pady=(12, 0))
+        def on_vol_change(*_):
+            try:
+                vol_val_lbl.config(text=f"{float(vol_var.get()):.2f}")
+            except Exception:
+                pass
+        vol_var.trace_add('write', on_vol_change)
+
+        # Buttons
+        btns = ttk.Frame(frm)
+        btns.grid(row=2, column=0, columnspan=3, sticky="e", pady=(16, 0))
+        def on_ok():
+            self.background_music_path = file_var.get().strip() or None
+            self.background_music_volume = max(0.0, min(1.0, float(vol_var.get())))
+            dlg.destroy()
+        ttk.Button(btns, text="OK", command=on_ok).pack(side=tk.RIGHT, padx=(8,0))
+        ttk.Button(btns, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT)
+
+        frm.columnconfigure(1, weight=1)
+
+    def _open_voice_config(self):
+        """Open a dialog to choose voice file and volume."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Voice Settings")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        frm = ttk.Frame(dlg, padding=16)
+        frm.pack(fill=tk.BOTH, expand=True)
+
+        # File row
+        ttk.Label(frm, text="File:").grid(row=0, column=0, sticky="w")
+        file_var = tk.StringVar(value=self.voice_path or "")
+        file_entry = ttk.Entry(frm, textvariable=file_var, width=42)
+        file_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
+        def on_browse():
+            path = filedialog.askopenfilename(
+                title="Select Voice Audio",
+                filetypes=[("Audio Files", "*.mp3 *.wav *.aac *.m4a"), ("All Files", "*.*")]
+            )
+            if path:
+                file_var.set(path)
+        ttk.Button(frm, text="Browse", command=on_browse).grid(row=0, column=2, sticky="w")
+
+        # Volume row
+        ttk.Label(frm, text="Volume:").grid(row=1, column=0, sticky="w", pady=(12, 0))
+        vol_var = tk.DoubleVar(value=self.voice_volume)
+        vol_scale = ttk.Scale(frm, from_=0.0, to=1.0, orient=tk.HORIZONTAL, variable=vol_var)
+        vol_scale.grid(row=1, column=1, sticky="ew", padx=(8, 8), pady=(12, 0))
+        vol_val_lbl = ttk.Label(frm, text=f"{self.voice_volume:.2f}")
+        vol_val_lbl.grid(row=1, column=2, sticky="w", pady=(12, 0))
+        def on_vol_change(*_):
+            try:
+                vol_val_lbl.config(text=f"{float(vol_var.get()):.2f}")
+            except Exception:
+                pass
+        vol_var.trace_add('write', on_vol_change)
+
+        # Buttons
+        btns = ttk.Frame(frm)
+        btns.grid(row=2, column=0, columnspan=3, sticky="e", pady=(16, 0))
+        def on_ok():
+            self.voice_path = file_var.get().strip() or None
+            self.voice_volume = max(0.0, min(1.0, float(vol_var.get())))
+            dlg.destroy()
+        ttk.Button(btns, text="OK", command=on_ok).pack(side=tk.RIGHT, padx=(8,0))
+        ttk.Button(btns, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT)
+
+        frm.columnconfigure(1, weight=1)
     
     def _create_styled_button(self, parent, text, command, style_name='TButton', **kwargs):
         """Create a styled button with fallback support"""
@@ -352,40 +472,40 @@ class MainWindow:
     
     def _create_main_layout(self):
         """Create main layout with paned windows"""
-        # Create main paned window with better spacing
-        main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
-        main_paned.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        # Main container with padding
+        main_container = ttk.Frame(self.root)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         
-        # Left panel (preview + timeline)
-        left_panel = ttk.Frame(main_paned)
-        main_paned.add(left_panel, weight=3)
+        # Top toolbar area
+        toolbar_frame = ttk.Frame(main_container, style='Card.TFrame')
+        toolbar_frame.pack(fill=tk.X, pady=(0, 8))
+        self.toolbar_container = toolbar_frame
         
-        # Right panel (properties)
-        right_panel = ttk.Frame(main_paned)
-        main_paned.add(right_panel, weight=1)
+        # Create horizontal paned window for main content
+        main_paned = ttk.PanedWindow(main_container, orient=tk.HORIZONTAL)
+        main_paned.pack(fill=tk.BOTH, expand=True)
+        
+        # Left side: Preview
+        left_panel = ttk.Frame(main_paned, style='Card.TFrame')
+        main_paned.add(left_panel, weight=4)
+        
+        # Center: Timeline and layers
+        center_panel = ttk.Frame(main_paned, style='Card.TFrame')
+        main_paned.add(center_panel, weight=3)
+        
+        # Right side: Properties
+        right_panel = ttk.Frame(main_paned, style='Card.TFrame')
+        main_paned.add(right_panel, weight=2)
         
         self.left_panel = left_panel
+        self.center_panel = center_panel
         self.right_panel = right_panel
-        
-        # Top area in left panel for toolbar with better spacing
-        self.toolbar_container = ttk.Frame(self.left_panel)
-        self.toolbar_container.pack(fill=tk.X, padx=15, pady=(15, 10))
-
-        # Create inner split on the left: preview (left) and timeline/layers (right)
-        self.left_inner = ttk.PanedWindow(self.left_panel, orient=tk.HORIZONTAL)
-        self.left_inner.pack(fill=tk.BOTH, expand=True, padx=15)
-        
-        self.preview_side = ttk.Frame(self.left_inner)
-        self.timeline_side = ttk.Frame(self.left_inner, width=340)
-        
-        self.left_inner.add(self.preview_side, weight=3)
-        self.left_inner.add(self.timeline_side, weight=2)
     
     def _create_toolbar(self):
         """Create toolbar"""
         parent = getattr(self, "toolbar_container", self.left_panel)
         toolbar = ttk.Frame(parent)
-        toolbar.pack(fill=tk.X, padx=15, pady=15)
+        toolbar.pack(fill=tk.X, padx=16, pady=12)
         
         # Playback controls with modern styling
         self._create_styled_button(toolbar, text="⏮", command=self._seek_start, style_name='Secondary.TButton').pack(side=tk.LEFT, padx=4)
@@ -400,25 +520,33 @@ class MainWindow:
         self._create_styled_button(toolbar, text="Add Image", command=self._add_image_layer, style_name='Success.TButton').pack(side=tk.LEFT, padx=4)
         self._create_styled_button(toolbar, text="Add Box", command=self._add_box_layer, style_name='Success.TButton').pack(side=tk.LEFT, padx=4)
         self._create_styled_button(toolbar, text="Effects", command=self._configure_image_transitions, style_name='Info.TButton').pack(side=tk.LEFT, padx=12)
-        self._create_styled_button(toolbar, text="Music", command=self._select_background_music, style_name='Info.TButton').pack(side=tk.LEFT, padx=4)
+        self._create_styled_button(toolbar, text="Music", command=self._open_music_config, style_name='Info.TButton').pack(side=tk.LEFT, padx=4)
+        self._create_styled_button(toolbar, text="Voice", command=self._open_voice_config, style_name='Info.TButton').pack(side=tk.LEFT, padx=4)
         
         # Separator
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=20)
         
-        # Time display with modern styling
-        self.time_label = ttk.Label(toolbar, text="00:00.0", font=('Segoe UI', 11, 'bold'), foreground='#495057')
+        # Bootstrap time display
+        self.time_label = ttk.Label(toolbar, text="00:00.0", font=('Inter', 11, 'bold'))
         self.time_label.pack(side=tk.RIGHT, padx=20)
     
     def _create_preview_area(self):
         """Create preview area with exact export resolution"""
-        parent = getattr(self, "preview_side", self.left_panel)
-        preview_frame = ttk.LabelFrame(parent, text="Preview (720x1280 - Exact Export Size)")
-        # Keep preview anchored to top-left without consuming vertical space
-        preview_frame.pack(anchor=tk.NW, padx=15, pady=15)
+        parent = self.left_panel
         
-        # Create container frame for canvas with better padding
+        # Header
+        header_frame = ttk.Frame(parent)
+        header_frame.pack(fill=tk.X, padx=16, pady=(16, 8))
+        ttk.Label(header_frame, text="📹 Preview", style='Header.TLabel').pack(side=tk.LEFT)
+        ttk.Label(header_frame, text="720×1280", style='TLabel').pack(side=tk.RIGHT)
+        
+        # Preview frame
+        preview_frame = ttk.Frame(parent)
+        preview_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
+        
+        # Create container frame for canvas
         canvas_container = ttk.Frame(preview_frame)
-        canvas_container.pack(padx=15, pady=15)
+        canvas_container.pack(fill=tk.BOTH, expand=True)
         
         # Create preview canvas with exact export size
         self.preview_canvas = PreviewCanvas(
@@ -437,24 +565,45 @@ class MainWindow:
     
     def _create_property_panel(self):
         """Create property panel"""
+        parent = self.right_panel
+        
+        # Header
+        header_frame = ttk.Frame(parent)
+        header_frame.pack(fill=tk.X, padx=16, pady=(16, 8))
+        ttk.Label(header_frame, text="⚙️ Properties", style='Header.TLabel').pack(side=tk.LEFT)
+        
+        # Property panel frame
+        panel_frame = ttk.Frame(parent)
+        panel_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
+        
         self.property_panel = PropertyPanel(
-            self.right_panel,
+            panel_frame,
             on_property_change=self._on_property_change
         )
-        self.property_panel.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        self.property_panel.pack(fill=tk.BOTH, expand=True)
         
         # Set preview canvas reference for property panel
         self.property_panel.preview_canvas = self.preview_canvas
+        
+        # Set preview canvas reference for layer panel (will be set in _create_timeline if layer_panel exists)
+        pass
     
     def _create_timeline(self):
         """Create timeline"""
-        parent = getattr(self, "timeline_side", self.left_panel)
-        timeline_frame = ttk.LabelFrame(parent, text="Timeline")
-        timeline_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        parent = self.center_panel
+        
+        # Header
+        header_frame = ttk.Frame(parent)
+        header_frame.pack(fill=tk.X, padx=16, pady=(16, 8))
+        ttk.Label(header_frame, text="🎬 Timeline & Layers", style='Header.TLabel').pack(side=tk.LEFT)
+        
+        # Timeline frame
+        timeline_frame = ttk.Frame(parent)
+        timeline_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
         
         # Timeline controls with better spacing
         controls_frame = ttk.Frame(timeline_frame)
-        controls_frame.pack(fill=tk.X, padx=15, pady=15)
+        controls_frame.pack(fill=tk.X, padx=12, pady=12)
         
         # Time slider
         self.time_slider = ttk.Scale(
@@ -464,23 +613,30 @@ class MainWindow:
             orient=tk.HORIZONTAL,
             command=self._on_time_change
         )
-        self.time_slider.pack(fill=tk.X, padx=15)
+        self.time_slider.pack(fill=tk.X, padx=8)
         
-        # Layer list with modern styling
-        self.layer_listbox = tk.Listbox(timeline_frame, font=('Segoe UI', 9))
-        self.layer_listbox.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
-        self.layer_listbox.bind('<<ListboxSelect>>', self._on_layer_list_select)
+        # Modern layer panel
+        self.layer_panel = LayerPanel(
+            timeline_frame,
+            timeline_manager=self.timeline_manager,
+            on_layer_select=self._on_layer_select
+        )
+        self.layer_panel.pack(fill=tk.BOTH, expand=True)
+        
+        # Set preview canvas reference if it exists
+        if hasattr(self, 'preview_canvas') and self.preview_canvas is not None:
+            self.layer_panel.preview_canvas = self.preview_canvas
     
     def _create_status_bar(self):
         """Create status bar"""
-        self.status_bar = ttk.Frame(self.root)
-        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+        self.status_bar = ttk.Frame(self.root, style='Card.TFrame')
+        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM, padx=8, pady=(0, 8))
         
-        self.status_label = ttk.Label(self.status_bar, text="Ready", font=('Segoe UI', 9))
-        self.status_label.pack(side=tk.LEFT, padx=20)
+        self.status_label = ttk.Label(self.status_bar, text="✅ Ready", font=('Inter', 10))
+        self.status_label.pack(side=tk.LEFT, padx=16, pady=8)
         
         self.progress_bar = ttk.Progressbar(self.status_bar, mode='determinate')
-        self.progress_bar.pack(side=tk.RIGHT, padx=20, pady=8)
+        self.progress_bar.pack(side=tk.RIGHT, padx=16, pady=8)
     
     def _setup_bindings(self):
         """Setup keyboard shortcuts"""
@@ -516,14 +672,8 @@ class MainWindow:
         self._update_time_display()
     
     def _on_layer_list_select(self, event):
-        """Handle layer list selection"""
-        selection = self.layer_listbox.curselection()
-        if selection:
-            layer_index = selection[0]
-            layers = self.timeline_manager.get_all_layers()
-            if 0 <= layer_index < len(layers):
-                layer = layers[layer_index]
-                self._on_layer_select(layer)
+        """Handle layer list selection - now handled by layer panel"""
+        pass
     
     # Menu actions
     def _new_project(self):
@@ -532,6 +682,8 @@ class MainWindow:
             self.timeline_manager = TimelineManager()
             self.preview_canvas.set_timeline_manager(self.timeline_manager)
             self.property_panel.set_selected_layer(None)
+            if hasattr(self, 'layer_panel') and self.layer_panel is not None:
+                self.layer_panel.set_timeline_manager(self.timeline_manager)
             self._update_layer_list()
             self._update_time_display()
     
@@ -551,11 +703,16 @@ class MainWindow:
                 if not ok:
                     messagebox.showerror("Open Project", "Failed to load project timeline data.")
                     return
-                # Apply background music if present
+                # Apply audio settings if present
                 self.background_music_path = data.get("background_music")
+                self.background_music_volume = data.get("background_music_volume", 1.0)
+                self.voice_path = data.get("voice_path")
+                self.voice_volume = data.get("voice_volume", 1.0)
                 # Rewire UI to new timeline
                 self.preview_canvas.set_timeline_manager(self.timeline_manager)
                 self.property_panel.set_selected_layer(None)
+                if hasattr(self, 'layer_panel') and self.layer_panel is not None:
+                    self.layer_panel.set_timeline_manager(self.timeline_manager)
                 # Update time slider and display
                 self.time_slider.configure(to=self.timeline_manager.get_total_duration())
                 self.time_slider.set(self.timeline_manager.get_current_time())
@@ -568,18 +725,21 @@ class MainWindow:
     
     def _save_project(self):
         """Save current project"""
-        file_path = filedialog.asksaveasfilename(
-            title="Save Project",
-            defaultextension=".json",
-            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
-        )
-        if file_path:
-            try:
+        try:
+            file_path = filedialog.asksaveasfilename(
+                title="Save Project",
+                defaultextension=".json",
+                filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+            )
+            if file_path:
                 import json
                 timeline_data = self.timeline_manager.export_timeline_data()
                 project = {
                     "timeline": timeline_data,
                     "background_music": self.background_music_path,
+                    "background_music_volume": self.background_music_volume,
+                    "voice_path": self.voice_path,
+                    "voice_volume": self.voice_volume,
                     "app": {
                         "name": "Video Editor",
                         "version": "1.0.0"
@@ -587,9 +747,19 @@ class MainWindow:
                 }
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(project, f, ensure_ascii=False, indent=2)
-                self.status_label.config(text=f"Saved: {file_path}")
-            except Exception as e:
-                messagebox.showerror("Save Project", f"Error saving project: {e}")
+                
+                # Safely update status label
+                try:
+                    if hasattr(self, 'status_label') and self.status_label.winfo_exists():
+                        self.status_label.config(text=f"Saved: {file_path}")
+                except (tk.TclError, AttributeError):
+                    pass  # Ignore widget errors
+                    
+                messagebox.showinfo("Save Project", f"Project saved successfully to:\n{file_path}")
+                
+        except Exception as e:
+            print(f"Error saving project: {e}")
+            messagebox.showerror("Save Project", f"Error saving project: {str(e)}")
     
     def _import_images(self):
         """Import image files"""
@@ -616,12 +786,16 @@ class MainWindow:
             filetypes=[("MP4 Files", "*.mp4"), ("All Files", "*.*")]
         )
         if output_path:
+            # Export settings dialog (encoder, quality)
+            settings = self._ask_export_settings()
+            if not settings:
+                return
+            preferred_encoder = settings.get("encoder", "auto")
+            quality = settings.get("quality", "high")
             timeline_data = self.timeline_manager.export_timeline_data()
             
-            # Ask for background video; use selected music from toolbar if set
+            # No background video - use solid color background
             background_video = None
-            if messagebox.askyesno("Background Video", "Would you like to use a background video?"):
-                background_video = self.asset_loader.select_video_file(self.root)
             
             background_music = self.background_music_path
             if background_music is None:
@@ -639,10 +813,77 @@ class MainWindow:
             self.video_renderer.render_video(
                 timeline_data, 
                 output_path,
+                quality=quality,
                 background_video=background_video,
                 background_music=background_music,
+                music_volume=self.background_music_volume,
+                voice_path=self.voice_path,
+                voice_volume=self.voice_volume,
+                preferred_encoder=preferred_encoder,
                 progress_callback=self._on_render_progress
             )
+
+    def _ask_export_settings(self):
+        """Modal dialog to choose export encoder and quality."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Export Settings")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        frm = ttk.Frame(dlg, padding=16)
+        frm.pack(fill=tk.BOTH, expand=True)
+
+        # Encoder selection
+        ttk.Label(frm, text="Encoder:").grid(row=0, column=0, sticky="w")
+        enc_var = tk.StringVar(value="auto")
+        enc_combo = ttk.Combobox(frm, state="readonly", textvariable=enc_var,
+                                 values=["auto", "nvidia (NVENC)", "amd (AMF)", "cpu (x264)"])
+        enc_combo.grid(row=0, column=1, sticky="ew", padx=(12, 0))
+        enc_combo.current(0)
+
+        # Quality selection
+        ttk.Label(frm, text="Quality:").grid(row=1, column=0, sticky="w", pady=(12, 0))
+        qual_var = tk.StringVar(value="high")
+        qual_combo = ttk.Combobox(frm, state="readonly", textvariable=qual_var,
+                                  values=["high", "medium", "low"])
+        qual_combo.grid(row=1, column=1, sticky="ew", padx=(12, 0), pady=(12, 0))
+        qual_combo.current(0)
+
+        # Buttons
+        btns = ttk.Frame(frm)
+        btns.grid(row=2, column=0, columnspan=2, sticky="e", pady=(16, 0))
+        result = {"encoder": "auto", "quality": "high"}
+        def on_ok():
+            sel = enc_var.get().lower()
+            if sel.startswith("nvidia"):
+                enc = "nvidia"
+            elif sel.startswith("amd"):
+                enc = "amd"
+            elif sel.startswith("cpu"):
+                enc = "cpu"
+            else:
+                enc = "auto"
+            result.update({"encoder": enc, "quality": qual_var.get()})
+            dlg.destroy()
+        def on_cancel():
+            result.clear()
+            dlg.destroy()
+        ttk.Button(btns, text="OK", command=on_ok).pack(side=tk.RIGHT, padx=(8,0))
+        ttk.Button(btns, text="Cancel", command=on_cancel).pack(side=tk.RIGHT)
+
+        frm.columnconfigure(1, weight=1)
+
+        # Center and wait
+        dlg.update_idletasks()
+        px = self.root.winfo_rootx(); py = self.root.winfo_rooty()
+        pw = self.root.winfo_width(); ph = self.root.winfo_height()
+        ww = dlg.winfo_width(); wh = dlg.winfo_height()
+        x = px + (pw - ww) // 2; y = py + (ph - wh) // 2
+        dlg.geometry(f"+{x}+{y}")
+        self.root.wait_window(dlg)
+
+        return result if result else None
 
     def _show_render_progress_dialog(self):
         """Create and show a modal progress dialog for rendering."""
@@ -848,11 +1089,8 @@ class MainWindow:
     
     def _update_layer_list(self):
         """Update layer list display"""
-        self.layer_listbox.delete(0, tk.END)
-        layers = self.timeline_manager.get_all_layers()
-        for layer in layers:
-            layer_type = layer.__class__.__name__.replace("Layer", "")
-            self.layer_listbox.insert(tk.END, f"{layer_type}: {layer.layer_id}")
+        if hasattr(self, 'layer_panel') and self.layer_panel is not None:
+            self.layer_panel.refresh_layers()
     
     def _add_text_layer(self):
         """Add text layer"""

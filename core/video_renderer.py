@@ -43,6 +43,10 @@ class VideoRenderer:
                     quality: str = "high",
                     background_video: Optional[str] = None,
                     background_music: Optional[str] = None,
+                    music_volume: float = 1.0,
+                    voice_path: Optional[str] = None,
+                    voice_volume: float = 1.0,
+                    preferred_encoder: str = "auto",
                     progress_callback: Optional[Callable[[float, str], None]] = None) -> bool:
         """Render video from timeline data using FFmpeg with ASS subtitles"""
         
@@ -61,7 +65,7 @@ class VideoRenderer:
             render_thread = threading.Thread(
                 target=self._render_video_thread,
                 args=(timeline_data, output_path, video_width, video_height, fps, quality, 
-                      background_video, background_music, progress_callback)
+                      background_video, background_music, music_volume, voice_path, voice_volume, preferred_encoder, progress_callback)
             )
             render_thread.daemon = True
             render_thread.start()
@@ -81,6 +85,10 @@ class VideoRenderer:
                            quality: str,
                            background_video: Optional[str],
                            background_music: Optional[str],
+                           music_volume: float,
+                           voice_path: Optional[str],
+                           voice_volume: float,
+                           preferred_encoder: str,
                            progress_callback: Optional[Callable[[float, str], None]]):
         """Render video in separate thread using FFmpeg with ASS subtitles"""
         try:
@@ -95,7 +103,8 @@ class VideoRenderer:
             # Build FFmpeg command
             ffmpeg_cmd = self._build_ffmpeg_command(
                 timeline_data, output_path, video_width, video_height, fps, quality,
-                background_video, background_music, ass_path
+                background_video, background_music, music_volume, voice_path, voice_volume, ass_path,
+                preferred_encoder
             )
             
             self._update_progress(0.3, "Starting video render...", progress_callback)
@@ -259,7 +268,10 @@ class VideoRenderer:
     def _build_ffmpeg_command(self, timeline_data: Dict[str, Any], output_path: str, 
                                 video_width: int, video_height: int, fps: int, quality: str,
                                 background_video: Optional[str], background_music: Optional[str], 
-                                ass_path: str) -> List[str]:
+                                music_volume: float,
+                                voice_path: Optional[str], voice_volume: float,
+                                ass_path: str,
+                                preferred_encoder: str) -> List[str]:
         """Build FFmpeg command for video rendering with image overlays"""
         cmd = ["ffmpeg", "-y"]
         
@@ -289,10 +301,18 @@ class VideoRenderer:
                     })
                     input_count += 1
         
+        # Audio inputs
+        music_idx = None
+        voice_idx = None
+        total_dur = str(timeline_data.get('total_duration', 10.0))
         if background_music and os.path.exists(background_music):
-            # Add background music and loop/trim to match video duration
-            total_dur = str(timeline_data.get('total_duration', 10.0))
             cmd.extend(["-stream_loop", "-1", "-t", total_dur, "-i", background_music])
+            music_idx = input_count
+            input_count += 1
+        if voice_path and os.path.exists(voice_path):
+            # Voice track is used as-is (no loop), will be trimmed/shortest at the end
+            cmd.extend(["-i", voice_path])
+            voice_idx = input_count
             input_count += 1
         
         # Build video filter chain
@@ -412,21 +432,44 @@ class VideoRenderer:
         ass_filter = f"{current_filter}ass='{ass_path_escaped}'[vout]"
         video_filters.append(ass_filter)
         
+        # Build audio filter chain if audio inputs exist
+        audio_filters = []
+        amaps = []
+        if music_idx is not None or voice_idx is not None:
+            if music_idx is not None:
+                mv = max(0.0, min(2.0, float(music_volume)))
+                # Trim to total duration, reset PTS for clean start
+                audio_filters.append(f"[{music_idx}:a]atrim=duration={total_dur},asetpts=PTS-STARTPTS,volume={mv}[m]")
+                amaps.append("[m]")
+            if voice_idx is not None:
+                vv = max(0.0, min(2.0, float(voice_volume)))
+                # Ensure voice starts at t=0, no loop, trim to video duration
+                audio_filters.append(f"[{voice_idx}:a]atrim=duration={total_dur},asetpts=PTS-STARTPTS,volume={vv}[v]")
+                amaps.append("[v]")
+            if len(amaps) == 2:
+                audio_filters.append(f"{amaps[0]}{amaps[1]}amix=inputs=2:duration=longest:normalize=0[aout]")
+            else:
+                # Single source routed to aout
+                audio_filters.append(f"{amaps[0]}anull[aout]")
+
         # Join all filters
-        if video_filters:
-            cmd.extend(["-filter_complex", ";".join(video_filters)])
+        full_filters = ";".join(video_filters + audio_filters) if (video_filters or audio_filters) else None
+        if full_filters:
+            cmd.extend(["-filter_complex", full_filters])
             cmd.extend(["-map", "[vout]"])
+            if music_idx is not None or voice_idx is not None:
+                cmd.extend(["-map", "[aout]"])
         else:
             # No image overlays, just ASS
             cmd.extend(["-vf", f"ass='{ass_path_escaped}'"])
         
         # Video parameters
-        video_params = self._get_video_params(quality, fps)
+        video_params = self._get_video_params(quality, fps, preferred_encoder)
         cmd.extend(video_params)
         
-        # Audio parameters: map the last input audio and end with video duration
-        if background_music and os.path.exists(background_music):
-            cmd.extend(["-map", f"{input_count-1}:a:0", "-c:a", "aac", "-b:a", "128k", "-shortest"])
+        # Audio parameters (no -shortest so video length is controlled by timeline)
+        if music_idx is not None or voice_idx is not None:
+            cmd.extend(["-c:a", "aac", "-b:a", "128k"]) 
         
         cmd.append(output_path)
         
@@ -437,10 +480,25 @@ class VideoRenderer:
         
         return cmd
     
-    def _get_video_params(self, quality: str, fps: int) -> List[str]:
+    def _get_video_params(self, quality: str, fps: int, preferred_encoder: str) -> List[str]:
         """Get video encoding parameters based on quality"""
-        # Prefer AMD AMF if available on this system; fallback to libx264 (CPU)
-        encoder = self._choose_h264_encoder()
+        # Choose encoder based on preference + availability
+        encoder = None
+        pref = (preferred_encoder or "auto").lower()
+        if pref == "nvidia":
+            encoder = "h264_nvenc" if self._encoder_available("h264_nvenc") else None
+        elif pref == "amd":
+            encoder = "h264_amf" if self._encoder_available("h264_amf") else None
+        elif pref == "cpu":
+            encoder = "libx264"
+        if not encoder:
+            # Auto: prefer NVENC, then AMF, otherwise CPU
+            if self._encoder_available("h264_nvenc"):
+                encoder = "h264_nvenc"
+            elif self._encoder_available("h264_amf"):
+                encoder = "h264_amf"
+            else:
+                encoder = "libx264"
         if encoder == "h264_amf":
             if quality == "high":
                 return [
@@ -479,6 +537,41 @@ class VideoRenderer:
                     "-pix_fmt", "yuv420p"
                 ]
 
+        if encoder == "h264_nvenc":
+            if quality == "high":
+                return [
+                    "-c:v", "h264_nvenc",
+                    "-preset", "p4",
+                    "-profile:v", "high",
+                    "-rc:v", "vbr",
+                    "-b:v", "8M",
+                    "-maxrate", "10M",
+                    "-g", str(int(fps * 2)),
+                    "-pix_fmt", "yuv420p"
+                ]
+            elif quality == "medium":
+                return [
+                    "-c:v", "h264_nvenc",
+                    "-preset", "p5",
+                    "-profile:v", "high",
+                    "-rc:v", "vbr",
+                    "-b:v", "4M",
+                    "-maxrate", "5M",
+                    "-g", str(int(fps * 2)),
+                    "-pix_fmt", "yuv420p"
+                ]
+            else:
+                return [
+                    "-c:v", "h264_nvenc",
+                    "-preset", "p6",
+                    "-profile:v", "high",
+                    "-rc:v", "vbr",
+                    "-b:v", "1500k",
+                    "-maxrate", "2000k",
+                    "-g", str(int(fps * 2)),
+                    "-pix_fmt", "yuv420p"
+                ]
+
         # Fallback: CPU libx264
         if quality == "high":
             return [
@@ -509,10 +602,9 @@ class VideoRenderer:
                 "-pix_fmt", "yuv420p"
             ]
 
-    def _choose_h264_encoder(self) -> str:
-        """Choose best available H.264 encoder: prefer h264_amf when available."""
+    def _encoder_available(self, name: str) -> bool:
+        """Check if the specific encoder is available in ffmpeg."""
         try:
-            # Query available encoders from ffmpeg
             result = subprocess.run(
                 ["ffmpeg", "-v", "0", "-hide_banner", "-encoders"],
                 capture_output=True,
@@ -520,12 +612,9 @@ class VideoRenderer:
                 check=False,
             )
             text_out = (result.stdout or "") + (result.stderr or "")
-            # Simple substring check is sufficient
-            if "h264_amf" in text_out:
-                return "h264_amf"
+            return name in text_out
         except Exception:
-            pass
-        return "libx264"
+            return False
     
     def _execute_ffmpeg_command(self, cmd: List[str], progress_callback: Optional[Callable[[float, str], None]]) -> bool:
         """Execute FFmpeg command with progress tracking"""

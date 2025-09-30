@@ -20,7 +20,7 @@ class PreviewCanvas(tk.Canvas):
         self.display_scale = CANVAS_PREVIEW_SCALE
         super().__init__(
             parent,
-            bg="lightgray",
+            bg="#ffffff",
             width=int(self.canvas_width * self.display_scale),
             height=int(self.canvas_height * self.display_scale)
         )
@@ -599,11 +599,37 @@ class PreviewCanvas(tk.Canvas):
                 self._move_selected_layer(5, 0)
     
     def _on_mouse_wheel(self, event):
-        """Handle mouse wheel for zoom"""
-        if event.delta > 0 or event.num == 4:
-            self.zoom_in()
-        else:
-            self.zoom_out()
+        """Handle mouse wheel: scroll by default, zoom with Ctrl modifier"""
+        try:
+            # Ctrl pressed -> zoom
+            is_ctrl = bool(getattr(event, "state", 0) & 0x4)
+
+            if is_ctrl:
+                if getattr(event, "delta", 0) > 0 or getattr(event, "num", None) == 4:
+                    self.zoom_in()
+                else:
+                    self.zoom_out()
+                return
+
+            # No Ctrl -> scroll vertically
+            if hasattr(event, "delta") and event.delta != 0:
+                # On Windows, delta is multiples of 120. Negative delta scrolls down in Tk.
+                units = -int(event.delta / 120)
+                if units != 0:
+                    self.yview_scroll(units, "units")
+                return
+
+            # Linux: Button-4 (up) / Button-5 (down)
+            if getattr(event, "num", None) == 4:
+                self.yview_scroll(-3, "units")
+            elif getattr(event, "num", None) == 5:
+                self.yview_scroll(3, "units")
+        except Exception:
+            # Fallback to previous behavior if anything unexpected happens
+            if getattr(event, "delta", 0) > 0 or getattr(event, "num", None) == 4:
+                self.zoom_in()
+            else:
+                self.zoom_out()
     
     def _on_mouse_motion(self, event):
         """Handle mouse motion for hover effects"""
